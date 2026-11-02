@@ -196,8 +196,20 @@ async function chat(req, res) {
   res.end();
 }
 
+const MCP = require('./mcp.js').makeMcp({ store, persist, EXLIB, planDay, mealsFor, foodTotals, exName, buildContext, addDays, weekNo, DOWS, pd, START_DATE, END_DATE, WEEK_MEALS });
+function authed(req) { if (!APP_KEY) return true; const h = req.headers.authorization || ''; return req.headers['x-key'] === APP_KEY || h === 'Bearer ' + APP_KEY; }
+
 http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
+  if (url.pathname === '/mcp' || url.pathname === '/mcp/') {
+    res.setHeader('access-control-allow-origin', '*'); res.setHeader('access-control-allow-headers', 'authorization, content-type, x-key, mcp-protocol-version, mcp-session-id'); res.setHeader('access-control-allow-methods', 'POST, GET, OPTIONS');
+    if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
+    if (!authed(req)) { res.writeHead(401, { 'content-type': 'application/json', 'www-authenticate': 'Bearer realm="recomp8"' }); return res.end('{"error":"unauthorized"}'); }
+    if (req.method === 'GET') { res.writeHead(405, { 'content-type': 'application/json' }); return res.end('{"error":"streaming not offered; POST JSON-RPC"}'); }
+    if (req.method !== 'POST') return send(res, 405, { error: 'method' });
+    try { const body = await readBody(req, 1e6); const out = await MCP.handle(body); if (out.body === null) { res.writeHead(202); return res.end(); } return send(res, out.status, out.body); }
+    catch (e) { return send(res, 400, { jsonrpc: '2.0', id: null, error: { code: -32700, message: 'parse error' } }); }
+  }
   if (url.pathname.startsWith('/api/')) {
     if (APP_KEY && req.headers['x-key'] !== APP_KEY) return send(res, 401, { error: 'unauthorized' });
     const parts = url.pathname.slice(5).split('/').filter(Boolean);
