@@ -154,7 +154,12 @@ td{padding:8px;border-bottom:1px solid var(--line);vertical-align:middle}
 .chatp form button:disabled{opacity:.5}
 .typing{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--muted);animation:blink 1s infinite}
 @keyframes blink{50%{opacity:.2}}
-@media(max-width:480px){.chatp{right:0;left:0;width:100%;bottom:0;height:calc(100vh - 56px - env(safe-area-inset-top,0px));border-radius:16px 16px 0 0;z-index:18}}
+@media(max-width:640px){.chatp{right:0;left:0;width:100%;bottom:0;height:50dvh;max-height:50dvh;border-radius:16px 16px 0 0;z-index:18;box-shadow:0 -8px 30px rgba(0,0,0,.25);transition:height .2s,max-height .2s}.chatp.max{height:calc(100dvh - env(safe-area-inset-top,0px));max-height:calc(100dvh - env(safe-area-inset-top,0px));border-radius:0}.chatp .hd{padding:6px 10px}.chatp .hd::before{content:"";position:absolute;left:50%;top:5px;width:36px;height:4px;border-radius:2px;background:var(--line);transform:translateX(-50%)}.chatp .hd{position:relative;padding-top:12px}.chatp .msgs{padding:8px 12px}.chatp form{padding-top:6px}}
+body.chat-open main{padding-bottom:calc(50dvh + 24px)}
+body.chat-open.chat-max main{padding-bottom:24px}
+@media(min-width:641px){body.chat-open main{padding-bottom:calc(var(--tab-h) + 24px + env(safe-area-inset-bottom,0px))}}
+.chatp .hd .ib.grow svg{width:20px;height:20px}
+@media(min-width:641px){.chatp .hd .ib.grow{display:none}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 
@@ -173,7 +178,7 @@ td{padding:8px;border-bottom:1px solid var(--line);vertical-align:middle}
 <div class="toast" id="toast"></div>
 <button class="fab" id="fab" aria-label="Open coach chat" hidden><svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-8 8H8l-5 3 1.2-4.2A8 8 0 1 1 21 12z"/><path d="M8 11h8M8 14h5"/></svg></button>
 <section class="chatp" id="chatp" hidden aria-label="Coach chat">
-  <div class="hd"><span class="t">Coach</span><button class="btn sm ghost" id="chatClear">Clear</button><button class="ib" id="chatClose" aria-label="Close chat"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+  <div class="hd"><span class="t">Coach</span><button class="btn sm ghost" id="chatClear">Clear</button><button class="ib grow" id="chatMax" aria-label="Expand chat"><svg viewBox="0 0 24 24"><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"/></svg></button><button class="ib" id="chatClose" aria-label="Close chat"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
   <div class="msgs" id="msgs"></div>
   <div class="sug" id="sug"></div>
   <form id="chatForm"><textarea id="chatIn" rows="1" placeholder="Ask the coach…" aria-label="Message"></textarea><button type="submit" id="chatSend" aria-label="Send"><svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button></form>
@@ -754,8 +759,9 @@ function chatSave(){lsSet('chat',CHAT.msgs.slice(-40))}
 function md(t){let h=esc(t);h=h.replace(/\*\*(.+?)\*\*/g,'<b>$1</b>');h=h.replace(/^(?:[-•] )(.*)$/gm,'<li>$1</li>').replace(/(<li>.*<\/li>\n?)+/g,m=>'<ul>'+m.replace(/\n/g,'')+'</ul>');return h}
 function chatRender(){const box=$('#msgs');box.innerHTML=CHAT.msgs.map(m=>m.role==='user'?`<div class="msg u">${esc(m.content)}</div>`:m.role==='tool'?`<div class="msg t ${m.ok?'ok':''}">${esc(m.content)}</div>`:`<div class="msg a">${md(m.content)}</div>`).join('')+(CHAT.busy&&!CHAT.streaming?'<div class="msg a"><span class="typing"></span></div>':'');box.scrollTop=box.scrollHeight}
 function chatSuggestions(){const v=S.view;const list=v==='train'?['I only have 30 min — shorten today but hit every main muscle group','Swap anything that needs a bench; they\'re all taken','What weight should I start with on the first lift?']:v==='eat'?['What should I eat tonight to land 180 g protein?','Swap tomorrow\'s lunch for something I can buy near the office','How many calories do I have left today?']:v==='body'?['How is my weight trend vs the plan?','Should I change my calories this week?']:v==='calendar'?['Move this week\'s cardio to Saturday','I\'m traveling Thu–Sun, rework the week']:['What\'s my plan today and why?','I only have 30 min today — adjust the workout','Did I hit protein yesterday?'];$('#sug').innerHTML=list.map(s=>`<button type="button">${esc(s)}</button>`).join('');$('#sug').querySelectorAll('button').forEach(b=>b.onclick=()=>{$('#chatIn').value=b.textContent;chatSend()})}
-function chatOpen(){$('#chatp').hidden=false;$('#fab').hidden=true;chatSuggestions();chatRender();setTimeout(()=>$('#chatIn').focus(),50)}
-function chatClose(){$('#chatp').hidden=true;$('#fab').hidden=S.mode!=='server'}
+function chatOpen(){$('#chatp').hidden=false;$('#fab').hidden=true;document.body.classList.add('chat-open');chatSuggestions();chatRender();setTimeout(()=>$('#chatIn').focus(),50)}
+function chatMax(on){const p=$('#chatp');const v=on===undefined?!p.classList.contains('max'):on;p.classList.toggle('max',v);document.body.classList.toggle('chat-max',v);$('#chatMax').setAttribute('aria-label',v?'Shrink chat':'Expand chat');$('#msgs').scrollTop=$('#msgs').scrollHeight}
+function chatClose(){$('#chatp').hidden=true;$('#fab').hidden=S.mode!=='server';document.body.classList.remove('chat-open','chat-max')}
 async function chatSend(){const ta=$('#chatIn');const text=ta.value.trim();if(!text||CHAT.busy)return;ta.value='';ta.style.height='';
   CHAT.msgs.push({role:'user',content:text});CHAT.busy=true;CHAT.streaming=false;chatSave();chatRender();$('#chatSend').disabled=true;
   const history=CHAT.msgs.filter(m=>m.role!=='tool').slice(-20);
@@ -774,10 +780,12 @@ async function chatSend(){const ta=$('#chatIn');const text=ta.value.trim();if(!t
   CHAT.busy=false;CHAT.streaming=false;chatSave();chatRender();$('#chatSend').disabled=false;
   if(changed){try{await loadAll();if(S.meals.custom)Object.assign(MEALS,S.meals.custom);render();toast('Updated')}catch(e){}}
 }
-$('#fab').onclick=chatOpen;$('#chatClose').onclick=chatClose;
+$('#fab').onclick=chatOpen;$('#chatClose').onclick=chatClose;$('#chatMax').onclick=()=>chatMax();
+(()=>{let y0=null;const hd=$('#chatp .hd');hd.addEventListener('touchstart',e=>{if(e.target.closest('button'))return;y0=e.touches[0].clientY},{passive:true});hd.addEventListener('touchend',e=>{if(y0===null)return;const dy=e.changedTouches[0].clientY-y0;y0=null;if(dy<-40)chatMax(true);else if(dy>40){if($('#chatp').classList.contains('max'))chatMax(false);else chatClose()}},{passive:true})})();
 $('#chatClear').onclick=()=>{CHAT.msgs=[];chatSave();chatRender()};
 $('#chatForm').onsubmit=e=>{e.preventDefault();chatSend()};
 $('#chatIn').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();chatSend()}});
+window.addEventListener('resize',()=>{const m=$('#msgs');if(m&&!$('#chatp').hidden)m.scrollTop=m.scrollHeight});
 $('#chatIn').addEventListener('input',e=>{e.target.style.height='';e.target.style.height=Math.min(120,e.target.scrollHeight)+'px'});
 
 document.addEventListener('click',e=>{const b=e.target.closest('.exname');if(b){e.preventDefault();e.stopPropagation();howTo(b.dataset.how)}},true);
