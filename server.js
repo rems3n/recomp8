@@ -82,13 +82,128 @@ async function searchFood(q) {
   return { status: 200, body: { foods: foods.map(f => ({ name: f.description, brand: f.brandOwner || f.brandName || '', per100: { kcal: get(f, 1008, 'Energy'), p: get(f, 1003, 'Protein'), c: get(f, 1005, 'Carbohydrate, by difference'), f: get(f, 1004, 'Total lipid (fat)') }, servingGrams: f.servingSize && /g/i.test(f.servingSizeUnit || '') ? f.servingSize : null, serving: f.householdServingFullText || null })), source: 'USDA FoodData Central' } };
 }
 
+/* ---------- coach chat: Anthropic Messages API, streaming + tool use, server-side loop ---------- */
+const EXLIB = JSON.parse(fs.readFileSync(path.join(PUBLIC, 'exlib.json'), 'utf8'));   // exercises, templates, meals, slots (built from recomp.html)
+const CHAT_MODEL = process.env.CHAT_MODEL || ANTHROPIC_MODEL;
+const START_DATE = '2026-11-02', END_DATE = '2026-12-31';
+const DOWS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const WEEK_PLAN = { 1: ['FB', 'WALK', 'FB', 'WALK', 'FB', 'SPIN', 'WALK'], 8: ['DLL', 'DLU', 'TEST', 'WALK', 'REST', 'WALK', 'REST'], def: ['LA', 'UA', 'RUN', 'LB', 'UB', 'BIKE', 'WALK'] };
+const WEEK_MEALS = { 1: ['b1', 'l1', 's1', 'd1', 'e1'], 2: ['b2', 'l3', 's2', 'd3', 'e2'], 3: ['b4', 'l2', 's3', 'd5', 'e1'], 4: ['b1', 'l4', 's1', 'd2', 'e1'], 5: ['b3', 'l1', 's2', 'd7', 'e2'], 6: ['b2', 'l6', 's4', 'd4', 'e1'], 0: ['b5', 'l5', 's3', 'd6', 'e0'] };
+function pd(s) { const [y, m, d] = s.split('-').map(Number); return new Date(Date.UTC(y, m - 1, d)); }
+function ymd(d) { return d.toISOString().slice(0, 10); }
+function addDays(s, n) { const d = pd(s); d.setUTCDate(d.getUTCDate() + n); return ymd(d); }
+function weekNo(s) { return Math.floor((pd(s) - pd(START_DATE)) / 864e5 / 7) + 1; }
+function defaultTpl(s) { const w = weekNo(s), dow = (pd(s).getUTCDay() + 6) % 7; return (WEEK_PLAN[w] || WEEK_PLAN.def)[dow]; }
+function planDay(s) { const o = store.plan.days && store.plan.days.days && store.plan.days.days[s]; if (o) return { tpl: o.tpl, ex: o.ex || EXLIB.tpl[o.tpl].ex.map(([id, sets, reps]) => ({ id, sets, reps })) }; const t = defaultTpl(s); return { tpl: t, ex: EXLIB.tpl[t].ex.map(([id, sets, reps]) => ({ id, sets, reps })) }; }
+function mealsFor(s) { const dow = pd(s).getUTCDay(); const wk = (store.plan.meals && store.plan.meals.week) || {}; const custom = (store.plan.meals && store.plan.meals.custom) || {}; const out = {}; EXLIB.slots.forEach(([k], i) => { const id = (wk[dow] || {})[k] || WEEK_MEALS[dow][i]; out[k] = { id, ...(EXLIB.meals[id] || custom[id] || { n: id }) }; }); return out; }
+function foodTotals(s) { const f = store.food[s]; const t = { kcal: 0, p: 0, c: 0, f: 0, items: [] }; ((f && f.items) || []).forEach(i => { t.kcal += +i.k || 0; t.p += +i.p || 0; t.c += +i.c || 0; t.f += +i.f || 0; t.items.push(i.n); }); return t; }
+function exName(id) { return (EXLIB.ex[id] || {}).n || id; }
+function buildContext(today) {
+  const w = weekNo(today); const p = planDay(today); const t = EXLIB.tpl[p.tpl];
+  const settings = Object.assign({ kcal: 2300, p: 180, c: 240, f: 70 }, store.settings.main || {});
+  const body = Object.values(store.body).sort((a, b) => a.date < b.date ? -1 : 1).slice(-14).map(r => `${r.date}: ${r.w} lb${r.fat ? ', ' + r.fat + '% fat' : ''}${r.muscle ? ', ' + r.muscle + ' lb muscle' : ''}`);
+  const recent = Object.values(store.logs).filter(l => l.date < today && l.date >= addDays(today, -14)).sort((a, b) => a.date < b.date ? 1 : -1).slice(0, 8).map(l => `${l.date} ${EXLIB.tpl[l.tpl] ? EXLIB.tpl[l.tpl].n : l.tpl}${l.done ? ' (done)' : ' (not finished)'}: ` + (l.ex || []).map(e => exName(e.id) + ' ' + e.sets.filter(s => s.done).map(s => `${s.r}@${s.w || 0}`).join('/')).join('; '));
+  const todayLog = store.logs[today];
+  const food = foodTotals(today); const meals = mealsFor(today);
+  const week = []; for (let i = 0; i < 7; i++) { const d = addDays(addDays(START_DATE, (w - 1) * 7), i); if (d > END_DATE) break; const pp = planDay(d); week.push(`${DOWS[pd(d).getUTCDay()]} ${d.slice(5)}: ${EXLIB.tpl[pp.tpl].n}${store.logs[d] && store.logs[d].done ? ' ✓' : ''}`); }
+  return `TODAY: ${today} (${DOWS[pd(today).getUTCDay()]}), week ${w} of the 8-week plan (phase: ${['', 'Recover + learn the lifts', 'Find working weights', 'Progressive overload', 'Progressive overload', 'Progressive overload', 'Progressive overload', 'Peak loads', 'Deload + re-test', 'Carry on'][w] || ''}).
+TODAY'S SESSION: ${t.n} [${p.tpl}] — ${t.d}
+Exercises: ${p.ex.length ? p.ex.map(e => `${e.id} (${exName(e.id)}) ${e.sets}x${e.reps}`).join('; ') : 'none (cardio/rest day)'}
+${todayLog ? 'Logged so far today: ' + (todayLog.ex || []).map(e => exName(e.id) + ' ' + e.sets.filter(s => s.done).map(s => `${s.r}@${s.w || 0}`).join('/')).filter(x => !/ $/.test(x)).join('; ') + (todayLog.done ? ' — marked done' : '') : 'Nothing logged yet today.'}
+THIS WEEK: ${week.join(' | ')}
+RECENT SESSIONS (last 14 days): ${recent.length ? recent.join('\n') : 'none yet'}
+BODY (last 14 entries): ${body.length ? body.join('; ') : 'no weigh-ins yet'}
+TARGETS: ${settings.kcal} kcal, ${settings.p} g protein, ${settings.c} g carbs, ${settings.f} g fat per day.
+FOOD TODAY: ${Math.round(food.kcal)} kcal, ${Math.round(food.p)}P ${Math.round(food.c)}C ${Math.round(food.f)}F${food.items.length ? ' (' + food.items.join(', ') + ')' : ' (nothing logged)'}
+TODAY'S PLANNED MEALS: ${EXLIB.slots.map(([k, l]) => `${l}: ${meals[k].n} [${meals[k].id}] ${meals[k].k} kcal/${meals[k].p}P`).join('; ')}`;
+}
+const SYSTEM_STATIC = `You are the in-app coach for Recomp 8, a personal 8-week fat-loss + muscle-gain tracker (Nov 2 – Dec 31, 2026) for Chris: 33, male, ~188 lb, endurance athlete (just ran the NYC Marathon), new to lifting, IT band history, trains at Planet Fitness (dumbbells to 75 lb, Smith machines, cables, selectorized machines, assisted pull-up, benches; NO squat rack or free barbell). Goal: ~1 lb/week fat loss while adding muscle; protein 180 g/day; lift 4x/week (upper/lower), cardio easy and short, no run over 40 min.
+You answer briefly and concretely, like a good coach texting. Use the tools to CHANGE things when asked (shorten a workout, swap an exercise, move days, log food, log a weigh-in, change a meal) — do not just describe the change. After a tool call, confirm in one or two lines what changed. When shortening a session, keep one compound per main pattern (squat/hinge, push, pull) and cut isolation first; use supersets if helpful (say so in the reps field, e.g. "8-10 (superset)"). Keep IT-band work (hip abduction / Copenhagen) on lower days when possible. Use exercise ids from the library exactly. Never invent exercise ids; pick from the library or ask. Dates are YYYY-MM-DD. If a request is ambiguous, ask one short question.
+EXERCISE LIBRARY (id: name | pattern | equipment):
+${Object.entries(EXLIB.ex).map(([id, e]) => `${id}: ${e.n} | ${EXLIB.pat[e.p]} | ${e.eq}`).join('\n')}
+SESSION TEMPLATES (code: name): ${Object.entries(EXLIB.tpl).map(([k, v]) => `${k}: ${v.n}`).join('; ')}
+MEAL LIBRARY (id: name kcal/P/C/F): ${Object.entries(EXLIB.meals).map(([id, m]) => `${id}: ${m.n} ${m.k}/${m.p}/${m.c}/${m.f}`).join('; ')}
+Meal slots: ${EXLIB.slots.map(([k, l]) => k + '=' + l).join(', ')}. Weekday numbers for meal swaps: 0=Sun … 6=Sat.`;
+const TOOLS = [
+  { name: 'set_day_exercises', description: 'Replace the exercise list for a date (keeps the session type unless tpl given). Use for shortening, swapping or re-ordering a workout. Logged sets for exercises that remain are preserved.', input_schema: { type: 'object', properties: { date: { type: 'string' }, tpl: { type: 'string', description: 'optional session template code' }, exercises: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, sets: { type: 'integer' }, reps: { type: 'string' } }, required: ['id', 'sets', 'reps'] } } }, required: ['date', 'exercises'] } },
+  { name: 'set_day_template', description: 'Change what kind of day a date is (e.g. make it a rest day, or Lower A). Resets exercises to that template.', input_schema: { type: 'object', properties: { date: { type: 'string' }, tpl: { type: 'string' } }, required: ['date', 'tpl'] } },
+  { name: 'swap_days', description: 'Swap the sessions of two dates.', input_schema: { type: 'object', properties: { a: { type: 'string' }, b: { type: 'string' } }, required: ['a', 'b'] } },
+  { name: 'log_food', description: 'Add food items to a date\'s log.', input_schema: { type: 'object', properties: { date: { type: 'string' }, items: { type: 'array', items: { type: 'object', properties: { n: { type: 'string' }, k: { type: 'number' }, p: { type: 'number' }, c: { type: 'number' }, f: { type: 'number' } }, required: ['n', 'k', 'p'] } } }, required: ['date', 'items'] } },
+  { name: 'log_body', description: 'Record a weigh-in.', input_schema: { type: 'object', properties: { date: { type: 'string' }, w: { type: 'number', description: 'lb' }, fat: { type: 'number' }, muscle: { type: 'number' } }, required: ['date', 'w'] } },
+  { name: 'set_meal', description: 'Change the planned meal for a weekday slot (applies to that weekday for the rest of the plan).', input_schema: { type: 'object', properties: { weekday: { type: 'integer' }, slot: { type: 'string' }, meal_id: { type: 'string' } }, required: ['weekday', 'slot', 'meal_id'] } },
+  { name: 'set_targets', description: 'Change daily calorie/macro targets.', input_schema: { type: 'object', properties: { kcal: { type: 'number' }, p: { type: 'number' }, c: { type: 'number' }, f: { type: 'number' } }, required: [] } },
+  { name: 'get_history', description: 'Full workout logs, food totals and weigh-ins for a date range (use when the summary in context is not enough).', input_schema: { type: 'object', properties: { from: { type: 'string' }, to: { type: 'string' } }, required: ['from', 'to'] } },
+  { name: 'get_day', description: 'The planned exercises and any log for one date.', input_schema: { type: 'object', properties: { date: { type: 'string' } }, required: ['date'] } }
+];
+function runTool(name, a) {
+  const days = () => { if (!store.plan.days) store.plan.days = { days: {} }; if (!store.plan.days.days) store.plan.days.days = {}; return store.plan.days.days; };
+  const mealsDoc = () => { if (!store.plan.meals) store.plan.meals = { week: {} }; if (!store.plan.meals.week) store.plan.meals.week = {}; return store.plan.meals; };
+  const bad = m => ({ error: m });
+  switch (name) {
+    case 'set_day_exercises': { if (!/^\d{4}-\d{2}-\d{2}$/.test(a.date)) return bad('bad date'); const cur = planDay(a.date); const unknown = (a.exercises || []).map(e => e.id).filter(id => !EXLIB.ex[id]); if (unknown.length) return bad('unknown exercise ids: ' + unknown.join(', ')); days()[a.date] = { tpl: a.tpl && EXLIB.tpl[a.tpl] ? a.tpl : cur.tpl, ex: a.exercises.map(e => ({ id: e.id, sets: Math.max(1, Math.min(8, +e.sets || 3)), reps: String(e.reps || '10') })) }; persist(); return { ok: true, date: a.date, exercises: days()[a.date].ex.map(e => `${exName(e.id)} ${e.sets}x${e.reps}`) }; }
+    case 'set_day_template': { if (!EXLIB.tpl[a.tpl]) return bad('unknown template'); days()[a.date] = { tpl: a.tpl, ex: EXLIB.tpl[a.tpl].ex.map(([id, sets, reps]) => ({ id, sets, reps })) }; persist(); return { ok: true, date: a.date, session: EXLIB.tpl[a.tpl].n }; }
+    case 'swap_days': { const pa = planDay(a.a), pb = planDay(a.b); days()[a.a] = pb; days()[a.b] = pa; persist(); return { ok: true, [a.a]: EXLIB.tpl[pb.tpl].n, [a.b]: EXLIB.tpl[pa.tpl].n }; }
+    case 'log_food': { const f = store.food[a.date] || { date: a.date, items: [] }; a.items.forEach(i => f.items.push({ n: String(i.n), k: Math.round(+i.k || 0), p: Math.round(+i.p || 0), c: Math.round(+i.c || 0), f: Math.round(+i.f || 0), src: 'coach' })); store.food[a.date] = f; persist(); const t = foodTotals(a.date); return { ok: true, day_totals: { kcal: Math.round(t.kcal), p: Math.round(t.p), c: Math.round(t.c), f: Math.round(t.f) } }; }
+    case 'log_body': { store.body[a.date] = { date: a.date, w: +a.w, fat: a.fat ? +a.fat : null, muscle: a.muscle ? +a.muscle : null, src: 'coach' }; persist(); return { ok: true }; }
+    case 'set_meal': { if (!EXLIB.meals[a.meal_id] && !((store.plan.meals || {}).custom || {})[a.meal_id]) return bad('unknown meal id'); const m = mealsDoc(); m.week[a.weekday] = Object.assign({}, m.week[a.weekday] || {}, { [a.slot]: a.meal_id }); persist(); return { ok: true, weekday: DOWS[a.weekday], slot: a.slot, meal: (EXLIB.meals[a.meal_id] || {}).n || a.meal_id }; }
+    case 'set_targets': { store.settings.main = Object.assign({ kcal: 2300, p: 180, c: 240, f: 70, maint: 2850 }, store.settings.main || {}, Object.fromEntries(Object.entries(a).filter(([k, v]) => ['kcal', 'p', 'c', 'f'].includes(k) && v))); persist(); return { ok: true, targets: store.settings.main }; }
+    case 'get_history': { const inR = d => d >= a.from && d <= a.to; return { logs: Object.values(store.logs).filter(l => inR(l.date)).map(l => ({ date: l.date, session: (EXLIB.tpl[l.tpl] || {}).n, done: !!l.done, notes: l.notes, ex: (l.ex || []).map(e => ({ name: exName(e.id), sets: e.sets.filter(s => s.done).map(s => `${s.r}@${s.w || 0}`) })) })), food: Object.keys(store.food).filter(inR).map(d => { const t = foodTotals(d); return { date: d, kcal: Math.round(t.kcal), p: Math.round(t.p), items: t.items }; }), body: Object.values(store.body).filter(r => inR(r.date)) }; }
+    case 'get_day': { const p = planDay(a.date); return { date: a.date, session: EXLIB.tpl[p.tpl].n, tpl: p.tpl, exercises: p.ex.map(e => ({ id: e.id, name: exName(e.id), sets: e.sets, reps: e.reps })), log: store.logs[a.date] || null, meals: mealsFor(a.date), food: foodTotals(a.date) }; }
+  }
+  return bad('unknown tool');
+}
+function anthropicStream(body, onEvent) {
+  return new Promise((resolve, reject) => {
+    const req = https.request({ hostname: 'api.anthropic.com', path: '/v1/messages', method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01', accept: 'text/event-stream' } }, r => {
+      if (r.statusCode !== 200) { let s = ''; r.on('data', d => s += d); r.on('end', () => { let m = s; try { m = JSON.parse(s).error.message; } catch (e) { } reject(new Error(m || ('HTTP ' + r.statusCode))); }); return; }
+      let buf = '';
+      r.on('data', chunk => { buf += chunk; let i; while ((i = buf.indexOf('\n\n')) >= 0) { const block = buf.slice(0, i); buf = buf.slice(i + 2); const line = block.split('\n').find(l => l.startsWith('data:')); if (!line) continue; try { onEvent(JSON.parse(line.slice(5).trim())); } catch (e) { } } });
+      r.on('end', resolve); r.on('error', reject);
+    });
+    req.on('error', reject); req.setTimeout(120000, () => req.destroy(new Error('timeout')));
+    req.end(JSON.stringify(body));
+  });
+}
+async function chat(req, res) {
+  if (!ANTHROPIC_KEY) return send(res, 503, { error: 'no_key', message: 'Add ANTHROPIC_API_KEY on the server.' });
+  const b = await readBody(req, 2e6);
+  const today = /^\d{4}-\d{2}-\d{2}$/.test(b.today || '') ? b.today : ymd(new Date());
+  let messages = (b.messages || []).filter(m => m && (m.role === 'user' || m.role === 'assistant') && m.content).slice(-24).map(m => ({ role: m.role, content: String(m.content).slice(0, 4000) }));
+  if (!messages.length || messages[messages.length - 1].role !== 'user') return send(res, 400, { error: 'need a user message' });
+  res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' });
+  const emit = (type, data) => res.write(`data: ${JSON.stringify(Object.assign({ type }, data))}\n\n`);
+  const system = [{ type: 'text', text: SYSTEM_STATIC, cache_control: { type: 'ephemeral' } }, { type: 'text', text: 'CURRENT STATE (screen the user is on: ' + (b.screen || 'unknown') + ')\n' + buildContext(today) }];
+  let changed = false;
+  try {
+    for (let round = 0; round < 6; round++) {
+      const blocks = []; let cur = null; let stop = null;
+      await anthropicStream({ model: CHAT_MODEL, max_tokens: 1200, stream: true, system, tools: TOOLS, messages }, ev => {
+        if (ev.type === 'content_block_start') { cur = ev.content_block.type === 'tool_use' ? { type: 'tool_use', id: ev.content_block.id, name: ev.content_block.name, json: '' } : { type: 'text', text: '' }; blocks.push(cur); }
+        else if (ev.type === 'content_block_delta') { if (ev.delta.type === 'text_delta') { cur.text += ev.delta.text; emit('text', { delta: ev.delta.text }); } else if (ev.delta.type === 'input_json_delta') cur.json += ev.delta.partial_json; }
+        else if (ev.type === 'message_delta') stop = ev.delta.stop_reason;
+      });
+      const content = blocks.map(bk => bk.type === 'text' ? { type: 'text', text: bk.text } : { type: 'tool_use', id: bk.id, name: bk.name, input: bk.json ? JSON.parse(bk.json) : {} }).filter(bk => bk.type !== 'text' || bk.text);
+      if (content.length) messages.push({ role: 'assistant', content });
+      const uses = content.filter(bk => bk.type === 'tool_use');
+      if (stop !== 'tool_use' || !uses.length) break;
+      const results = [];
+      for (const u of uses) { let out; try { out = runTool(u.name, u.input); } catch (e) { out = { error: String(e.message || e) }; } if (out && out.ok) changed = true; emit('tool', { name: u.name, input: u.input, ok: !!(out && out.ok) }); results.push({ type: 'tool_result', tool_use_id: u.id, content: JSON.stringify(out) }); }
+      messages.push({ role: 'user', content: results });
+      emit('text', { delta: '\n' });
+    }
+    emit('done', { changed });
+  } catch (e) { emit('error', { message: String(e.message || e) }); }
+  res.end();
+}
+
 http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
   if (url.pathname.startsWith('/api/')) {
     if (APP_KEY && req.headers['x-key'] !== APP_KEY) return send(res, 401, { error: 'unauthorized' });
     const parts = url.pathname.slice(5).split('/').filter(Boolean);
     try {
-      if (parts[0] === 'ping') return send(res, 200, { ok: true, vision: !!ANTHROPIC_KEY });
+      if (parts[0] === 'ping') return send(res, 200, { ok: true, vision: !!ANTHROPIC_KEY, chat: !!ANTHROPIC_KEY });
+      if (parts[0] === 'chat' && req.method === 'POST') return chat(req, res);
       if (parts[0] === 'food') {
         if (parts[1] === 'analyze' && req.method === 'POST') { const b = await readBody(req, 8e6); if (!b || !b.image) return send(res, 400, { error: 'no image' }); const out = await analyzeFood(b.image, b.mime, b.hint); return send(res, out.status, out.body); }
         if (parts[1] === 'barcode' && parts[2]) { const out = await barcode(parts[2]); return send(res, out.status, out.body); }

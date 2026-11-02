@@ -130,6 +130,31 @@ td{padding:8px;border-bottom:1px solid var(--line);vertical-align:middle}
 .conf{font-size:10px;padding:1px 6px;border-radius:4px;background:var(--surface2);color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
 .conf.low{color:var(--bad)}.conf.medium{color:var(--warn)}.conf.high{color:var(--good)}
 .preview{width:100%;max-height:240px;object-fit:cover;border-radius:10px;border:1px solid var(--line)}
+/* coach chat: floating bubble + in-place panel */
+.fab{position:fixed;right:max(16px,env(safe-area-inset-right,0px));bottom:calc(var(--tab-h) + 14px + env(safe-area-inset-bottom,0px));width:54px;height:54px;border-radius:50%;background:var(--accent);color:var(--accent-ink);border:0;box-shadow:0 6px 18px rgba(0,0,0,.25);display:grid;place-items:center;cursor:pointer;z-index:15}
+.fab svg{width:26px;height:26px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.fab[hidden]{display:none}
+.chatp{position:fixed;right:max(16px,env(safe-area-inset-right,0px));bottom:calc(var(--tab-h) + 14px + env(safe-area-inset-bottom,0px));width:min(420px,calc(100vw - 32px));height:min(640px,calc(100vh - var(--tab-h) - 40px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px)));background:var(--surface);color:var(--fg);border:1px solid var(--line);border-radius:16px;box-shadow:0 12px 40px rgba(0,0,0,.3);display:flex;flex-direction:column;z-index:16;overflow:hidden}
+.chatp[hidden]{display:none}
+.chatp .hd{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line);background:var(--surface2)}
+.chatp .hd .t{font-family:var(--display);font-size:18px;font-weight:700;flex:1}
+.chatp .msgs{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;-webkit-overflow-scrolling:touch}
+.msg{max-width:88%;padding:8px 11px;border-radius:14px;font-size:14px;line-height:1.4;white-space:pre-wrap;word-wrap:break-word}
+.msg.u{align-self:flex-end;background:var(--accent);color:var(--accent-ink);border-bottom-right-radius:4px}
+.msg.a{align-self:flex-start;background:var(--surface2);border-bottom-left-radius:4px}
+.msg.a b{font-weight:600}.msg.a ul{margin:4px 0;padding-left:18px}
+.msg.t{align-self:flex-start;font-size:11px;color:var(--muted);background:none;padding:0 4px;text-transform:uppercase;letter-spacing:.06em}
+.msg.t.ok::before{content:"✓ ";color:var(--good)}
+.chatp .sug{display:flex;gap:6px;overflow-x:auto;padding:0 12px 8px;scrollbar-width:none}.chatp .sug::-webkit-scrollbar{display:none}
+.chatp .sug button{flex:none;font:500 12px var(--body);padding:6px 10px;border-radius:99px;border:1px solid var(--line);background:var(--surface);color:var(--fg);cursor:pointer}
+.chatp form{display:flex;gap:8px;padding:10px 12px calc(10px + env(safe-area-inset-bottom,0px));border-top:1px solid var(--line);background:var(--surface)}
+.chatp textarea{flex:1;resize:none;min-height:44px;max-height:120px;padding:10px 12px;border-radius:12px;font-size:16px}
+.chatp form button{width:44px;height:44px;border-radius:12px;background:var(--accent);color:var(--accent-ink);border:0;display:grid;place-items:center;cursor:pointer;flex:none}
+.chatp form button svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.chatp form button:disabled{opacity:.5}
+.typing{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--muted);animation:blink 1s infinite}
+@keyframes blink{50%{opacity:.2}}
+@media(max-width:480px){.chatp{right:0;left:0;width:100%;bottom:0;height:calc(100vh - 56px - env(safe-area-inset-top,0px));border-radius:16px 16px 0 0;z-index:18}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 
@@ -146,6 +171,13 @@ td{padding:8px;border-bottom:1px solid var(--line);vertical-align:middle}
   <button data-v="body"><svg viewBox="0 0 24 24"><path d="M3 17l5-6 4 4 4-6 5 7"/><path d="M3 21h18"/></svg>Body</button>
 </nav>
 <div class="toast" id="toast"></div>
+<button class="fab" id="fab" aria-label="Open coach chat" hidden><svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-8 8H8l-5 3 1.2-4.2A8 8 0 1 1 21 12z"/><path d="M8 11h8M8 14h5"/></svg></button>
+<section class="chatp" id="chatp" hidden aria-label="Coach chat">
+  <div class="hd"><span class="t">Coach</span><button class="btn sm ghost" id="chatClear">Clear</button><button class="ib" id="chatClose" aria-label="Close chat"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+  <div class="msgs" id="msgs"></div>
+  <div class="sug" id="sug"></div>
+  <form id="chatForm"><textarea id="chatIn" rows="1" placeholder="Ask the coach…" aria-label="Message"></textarea><button type="submit" id="chatSend" aria-label="Send"><svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button></form>
+</section>
 
 <script>
 /* ================= DATA ================= */
@@ -322,7 +354,7 @@ function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');cl
 const VIEWS=['today','calendar','train','eat','body','settings'];
 function go(v,day){S.view=VIEWS.includes(v)?v:'today';if(day)S.day=day;if(location.hash!=='#'+S.view)location.hash=S.view;render()}
 window.addEventListener('hashchange',()=>{const v=location.hash.slice(1);if(VIEWS.includes(v)&&v!==S.view){S.view=v;render()}});
-$('#nav').addEventListener('click',e=>{const b=e.target.closest('button');if(b)go(b.dataset.v)});
+$('#nav').addEventListener('click',e=>{const b=e.target.closest('button');if(b){go(b.dataset.v);if(!$('#chatp').hidden)chatSuggestions()}});
 $('#gear').onclick=()=>go('settings');
 function render(){
   document.querySelectorAll('#nav button').forEach(b=>b.setAttribute('aria-current',b.dataset.v===S.view?'page':'false'));
@@ -340,7 +372,7 @@ function dayLog(s){return S.logs[s]}
 function dayDone(s){const l=S.logs[s];return !!(l&&l.done)}
 function lastPerf(exId,before){const ds=Object.keys(S.logs).filter(d=>d<before).sort().reverse();for(const d of ds){const e=(S.logs[d].ex||[]).find(x=>x.id===exId);if(e&&e.sets.some(s=>s.done))return {date:d,sets:e.sets.filter(s=>s.done)}}return null}
 function repRange(r){const m=String(r).match(/(\d+)(?:-(\d+))?/);if(!m)return null;return [Number(m[1]),m[2]?Number(m[2]):Number(m[1])]}
-function progression(ex,before){const lp=lastPerf(ex.id,before);if(!lp)return null;const rr=repRange(ex.reps);if(!rr||String(ex.reps).includes('s'))return {txt:'Last '+lp.date.slice(5)+': '+lp.sets.map(s=>s.r+(s.w?'@'+s.w:'')).join(', ')};
+function progression(ex,before){const lp=lastPerf(ex.id,before);if(!lp)return null;const rr=repRange(ex.reps);if(!rr||/^\d+\s*s\b/.test(String(ex.reps)))return {txt:'Last '+lp.date.slice(5)+': '+lp.sets.map(s=>s.r+(s.w?'@'+s.w:'')).join(', ')};
   const w=Math.max(...lp.sets.map(s=>+s.w||0));const allTop=lp.sets.length>=ex.sets&&lp.sets.every(s=>+s.r>=rr[1]);const lower=['squat','hinge','lunge','hip','legcurl','legext','calf'].includes(EX[ex.id].p);
   return {txt:'Last '+lp.date.slice(5)+': '+lp.sets.map(s=>s.r+'@'+(s.w||0)).join(', '),w,bump:allTop?(lower?10:5):0}}
 function macros(s){const f=S.food[s];const t={k:0,p:0,c:0,f:0};(f?.items||[]).forEach(i=>{t.k+=+i.k||0;t.p+=+i.p||0;t.c+=+i.c||0;t.f+=+i.f||0});return t}
@@ -484,10 +516,10 @@ function vTrain(m){
    <div class="stack" style="margin-top:10px"><button class="btn primary block" id="finish">${log.done?'Marked done ✓':'Finish & mark done'}</button>${log.done?'<button class="btn ghost" id="undone">Un-mark</button>':''}<span class="small muted" id="savedAt"></span></div></div>
    <div class="restbar" id="restbar" hidden><span class="timer" id="timer">—</span><span class="small">rest</span><span style="flex:1"></span><button id="t90">90s</button><button id="t120">2:00</button><button id="tstop">✕</button></div>`;
   const exs=$('#exs');
-  function draw(){exs.innerHTML=log.ex.length?log.ex.map((e,i)=>{const pl=p.ex[i];const pr=progression(pl,d);const sec=String(pl.reps).includes('s');return `<div class="ex" data-i="${i}"><div class="hd"><div style="min-width:0"><h3>${exName(e.id,'h3')}</h3><div class="small muted">Target <span class="num">${pl.sets}×${esc(pl.reps)}</span> · ${esc(EX[e.id].eq)}</div>${EX[e.id].cue?`<div class="small muted">${esc(EX[e.id].cue)}</div>`:''}${pr?`<div class="prev">${esc(pr.txt)}${pr.bump?` <span class="pill ok">+${pr.bump} lb today</span>`:''}</div>`:'<div class="prev">First time — leave 2 reps in the tank</div>'}</div><div class="stack" style="gap:6px"><button class="btn sm" data-sw="${i}">Swap</button>${exInfo(e.id)?`<button class="btn sm ghost" data-how="${e.id}">How to</button>`:''}</div></div>
+  function draw(){exs.innerHTML=log.ex.length?log.ex.map((e,i)=>{const pl=p.ex[i];const pr=progression(pl,d);const sec=/^\d+\s*s\b/.test(String(pl.reps));return `<div class="ex" data-i="${i}"><div class="hd"><div style="min-width:0"><h3>${exName(e.id,'h3')}</h3><div class="small muted">Target <span class="num">${pl.sets}×${esc(pl.reps)}</span> · ${esc(EX[e.id].eq)}</div>${EX[e.id].cue?`<div class="small muted">${esc(EX[e.id].cue)}</div>`:''}${pr?`<div class="prev">${esc(pr.txt)}${pr.bump?` <span class="pill ok">+${pr.bump} lb today</span>`:''}</div>`:'<div class="prev">First time — leave 2 reps in the tank</div>'}</div><div class="stack" style="gap:6px"><button class="btn sm" data-sw="${i}">Swap</button>${exInfo(e.id)?`<button class="btn sm ghost" data-how="${e.id}">How to</button>`:''}</div></div>
     ${exInfo(e.id)?`<div class="thumbs" data-how="${e.id}" role="button" tabindex="0" aria-label="How to ${esc(EX[e.id].n)}">${exInfo(e.id).imgs.map(s=>`<img src="${s}" alt="" loading="lazy">`).join('')}</div>`:''}
     <div class="sets"><span class="lbl">Set</span><span class="lbl">lb</span><span class="lbl">${sec?'sec':'reps'}</span><span></span>
-    ${e.sets.map((s,j)=>`<span class="num muted">${j+1}</span><input type="number" step="2.5" inputmode="decimal" value="${esc(s.w)}" placeholder="${pr&&pr.w?pr.w+(pr.bump||0):'—'}" data-i="${i}" data-j="${j}" data-k="w" aria-label="weight"><input type="number" inputmode="numeric" value="${esc(s.r)}" placeholder="${esc(String(pl.reps).replace('s',''))}" data-i="${i}" data-j="${j}" data-k="r" aria-label="reps"><button class="chk ${s.done?'on':''}" data-i="${i}" data-j="${j}" aria-label="set done">✓</button>`).join('')}</div>
+    ${e.sets.map((s,j)=>`<span class="num muted">${j+1}</span><input type="number" step="2.5" inputmode="decimal" value="${esc(s.w)}" placeholder="${pr&&pr.w?pr.w+(pr.bump||0):'—'}" data-i="${i}" data-j="${j}" data-k="w" aria-label="weight"><input type="number" inputmode="numeric" value="${esc(s.r)}" placeholder="${esc(String(pl.reps).match(/\d+/)?.[0]||'')}" data-i="${i}" data-j="${j}" data-k="r" aria-label="reps"><button class="chk ${s.done?'on':''}" data-i="${i}" data-j="${j}" aria-label="set done">✓</button>`).join('')}</div>
     <div class="row" style="margin-top:8px"><button class="btn sm ghost" data-add="${i}">+ add set</button></div></div>`}).join(''):`<div class="card"><p>No sets to log for this session. ${tp.k==='cardio'?'Do the cardio, then mark it done below.':'Enjoy the walk.'}</p></div>`;
     exs.querySelectorAll('input').forEach(inp=>inp.onchange=()=>{log.ex[+inp.dataset.i].sets[+inp.dataset.j][inp.dataset.k]=inp.value;persist()});
     exs.querySelectorAll('.chk').forEach(b=>b.onclick=()=>{const s=log.ex[+b.dataset.i].sets[+b.dataset.j];const inps=exs.querySelectorAll(`input[data-i="${b.dataset.i}"][data-j="${b.dataset.j}"]`);if(!s.done){s.w=inps[0].value||(inps[0].placeholder!=='—'?inps[0].placeholder:'');s.r=inps[1].value||inps[1].placeholder}s.done=!s.done;persist();draw();if(s.done)startTimer(90)});
@@ -715,6 +747,39 @@ async function askAI(ov,prompt,fmt){
 
 function askPin(){return new Promise(res=>{const ov=document.createElement('div');ov.className='ov';ov.innerHTML='<div class="md" role="dialog" aria-modal="true"><h2>Enter your app PIN</h2><p class="small muted">Set once per device. It keeps your logs private on the public URL.</p><form id="pf" class="stack"><input id="pin" type="password" inputmode="numeric" autocomplete="current-password" placeholder="PIN" required><button class="btn primary block">Unlock</button></form></div>';document.body.appendChild(ov);$('#pf',ov).onsubmit=e=>{e.preventDefault();try{localStorage.setItem('rc8:key',$('#pin',ov).value.trim())}catch(err){}ov.remove();res()};$('#pin',ov).focus()})}
 
+/* ================= COACH CHAT ================= */
+const CHAT={msgs:[],busy:false};
+function chatLoad(){CHAT.msgs=lsGet('chat')||[]}
+function chatSave(){lsSet('chat',CHAT.msgs.slice(-40))}
+function md(t){let h=esc(t);h=h.replace(/\*\*(.+?)\*\*/g,'<b>$1</b>');h=h.replace(/^(?:[-•] )(.*)$/gm,'<li>$1</li>').replace(/(<li>.*<\/li>\n?)+/g,m=>'<ul>'+m.replace(/\n/g,'')+'</ul>');return h}
+function chatRender(){const box=$('#msgs');box.innerHTML=CHAT.msgs.map(m=>m.role==='user'?`<div class="msg u">${esc(m.content)}</div>`:m.role==='tool'?`<div class="msg t ${m.ok?'ok':''}">${esc(m.content)}</div>`:`<div class="msg a">${md(m.content)}</div>`).join('')+(CHAT.busy&&!CHAT.streaming?'<div class="msg a"><span class="typing"></span></div>':'');box.scrollTop=box.scrollHeight}
+function chatSuggestions(){const v=S.view;const list=v==='train'?['I only have 30 min — shorten today but hit every main muscle group','Swap anything that needs a bench; they\'re all taken','What weight should I start with on the first lift?']:v==='eat'?['What should I eat tonight to land 180 g protein?','Swap tomorrow\'s lunch for something I can buy near the office','How many calories do I have left today?']:v==='body'?['How is my weight trend vs the plan?','Should I change my calories this week?']:v==='calendar'?['Move this week\'s cardio to Saturday','I\'m traveling Thu–Sun, rework the week']:['What\'s my plan today and why?','I only have 30 min today — adjust the workout','Did I hit protein yesterday?'];$('#sug').innerHTML=list.map(s=>`<button type="button">${esc(s)}</button>`).join('');$('#sug').querySelectorAll('button').forEach(b=>b.onclick=()=>{$('#chatIn').value=b.textContent;chatSend()})}
+function chatOpen(){$('#chatp').hidden=false;$('#fab').hidden=true;chatSuggestions();chatRender();setTimeout(()=>$('#chatIn').focus(),50)}
+function chatClose(){$('#chatp').hidden=true;$('#fab').hidden=S.mode!=='server'}
+async function chatSend(){const ta=$('#chatIn');const text=ta.value.trim();if(!text||CHAT.busy)return;ta.value='';ta.style.height='';
+  CHAT.msgs.push({role:'user',content:text});CHAT.busy=true;CHAT.streaming=false;chatSave();chatRender();$('#chatSend').disabled=true;
+  const history=CHAT.msgs.filter(m=>m.role!=='tool').slice(-20);
+  let reply='';let changed=false;const push=()=>{if(!CHAT.streaming){CHAT.streaming=true;CHAT.msgs.push({role:'assistant',content:''})}CHAT.msgs[CHAT.msgs.length-1].content=reply;chatRender()};
+  try{
+    const r=await fetch('/api/chat',{method:'POST',headers:{'content-type':'application/json','x-key':apiKey()},body:JSON.stringify({messages:history,today:S.day&&S.view!=='today'?clampDay(S.day):today(),screen:S.view})});
+    if(r.status===401)throw {code:'unauthorized'};if(r.status===503)throw {code:'no_key'};if(!r.ok)throw {code:'http_'+r.status};
+    const rd=r.body.getReader();const dec=new TextDecoder();let buf='';
+    while(true){const {value,done}=await rd.read();if(done)break;buf+=dec.decode(value,{stream:true});let i;while((i=buf.indexOf('\n\n'))>=0){const line=buf.slice(0,i).replace(/^data: ?/,'');buf=buf.slice(i+2);if(!line)continue;let ev;try{ev=JSON.parse(line)}catch(e){continue}
+      if(ev.type==='text'){reply+=ev.delta;push()}
+      else if(ev.type==='tool'){if(CHAT.streaming){reply=reply.replace(/\n+$/,'');push();CHAT.streaming=false;reply=''}CHAT.msgs.push({role:'tool',ok:ev.ok,content:ev.name.replace(/_/g,' ')+(ev.input&&ev.input.date?' · '+ev.input.date:'')});chatRender()}
+      else if(ev.type==='done'){changed=ev.changed}
+      else if(ev.type==='error'){reply+=(reply?'\n':'')+'⚠ '+ev.message;push()}}}
+    if(!CHAT.streaming&&!reply)CHAT.msgs.push({role:'assistant',content:'Done.'});
+  }catch(e){CHAT.msgs.push({role:'assistant',content:e.code==='no_key'?'The coach needs ANTHROPIC_API_KEY on the server.':e.code==='unauthorized'?'PIN rejected — reload and enter the PIN again.':'Could not reach the coach ('+(e.code||e.message||'error')+').'})}
+  CHAT.busy=false;CHAT.streaming=false;chatSave();chatRender();$('#chatSend').disabled=false;
+  if(changed){try{await loadAll();if(S.meals.custom)Object.assign(MEALS,S.meals.custom);render();toast('Updated')}catch(e){}}
+}
+$('#fab').onclick=chatOpen;$('#chatClose').onclick=chatClose;
+$('#chatClear').onclick=()=>{CHAT.msgs=[];chatSave();chatRender()};
+$('#chatForm').onsubmit=e=>{e.preventDefault();chatSend()};
+$('#chatIn').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();chatSend()}});
+$('#chatIn').addEventListener('input',e=>{e.target.style.height='';e.target.style.height=Math.min(120,e.target.scrollHeight)+'px'});
+
 document.addEventListener('click',e=>{const b=e.target.closest('.exname');if(b){e.preventDefault();e.stopPropagation();howTo(b.dataset.how)}},true);
 
 /* ================= BOOT ================= */
@@ -732,6 +797,7 @@ document.addEventListener('click',e=>{const b=e.target.closest('.exname');if(b){
   try{await loadAll()}catch(e){toast('Could not load saved data');if(S.mode==='server'){S.mode='local';try{await loadAll()}catch(e2){}}}
   if(S.meals.custom)Object.assign(MEALS,S.meals.custom);
   $('#status').innerHTML=S.mode==='cloud'||S.mode==='server'?'<b>●</b> synced':'<span>●</span> this browser';
+  if(S.mode==='server'){chatLoad();$('#fab').hidden=false}
   render();
   if(window.claude?.use){
     claude.use('sample').then(s=>{S.sample=s});
