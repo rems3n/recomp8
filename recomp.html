@@ -110,6 +110,23 @@ td{padding:8px;border-bottom:1px solid var(--line);vertical-align:middle}
 .chartbox{position:relative;height:220px;width:100%}
 .xrow{display:flex;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}
 .xrow .nm{flex:1;min-width:0}
+.thumbs{display:flex;gap:6px;margin-top:8px}
+.thumbs img{height:84px;width:auto;border-radius:8px;border:1px solid var(--line);background:#fff;object-fit:cover}
+.thumb{width:56px;height:56px;border-radius:8px;border:1px solid var(--line);background:#fff;object-fit:cover;flex:none}
+.howto img{width:100%;border-radius:10px;border:1px solid var(--line);background:#fff}
+.howto ol{padding-left:20px;margin:8px 0}.howto li{margin-bottom:6px}
+.capture{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:8px 0}
+.capture .btn{flex-direction:column;min-height:64px;gap:2px;font-size:13px}
+.capture .btn svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+#reader{width:100%;border-radius:10px;overflow:hidden;background:#000;min-height:220px}
+#reader video{width:100%!important}
+.fitem{display:grid;grid-template-columns:24px 1fr;gap:8px;align-items:start;padding:8px 0;border-bottom:1px solid var(--line)}
+.fitem .nums{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:6px}
+.fitem .nums label{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);display:flex;flex-direction:column;gap:2px}
+.fitem .nums input{width:100%;min-height:38px;padding:0 6px;text-align:center}
+.conf{font-size:10px;padding:1px 6px;border-radius:4px;background:var(--surface2);color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.conf.low{color:var(--bad)}.conf.medium{color:var(--warn)}.conf.high{color:var(--good)}
+.preview{width:100%;max-height:240px;object-fit:cover;border-radius:10px;border:1px solid var(--line)}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 
@@ -330,6 +347,15 @@ function avg7(upto){const rows=bodyRows().filter(r=>r.date<=upto).slice(-7);if(!
 function macroBars(s){const t=macros(s),g=S.settings;const row=(l,v,goal,u)=>`<div class="macro"><span>${l}</span><div class="bar ${v>goal*1.08?'over':''}"><i style="width:${Math.min(100,v/goal*100)}%"></i></div><span class="num small">${Math.round(v)} / ${goal}${u}</span></div>`;
   return row('Calories',t.k,g.kcal,'')+row('Protein',t.p,g.p,' g')+row('Carbs',t.c,g.c,' g')+row('Fat',t.f,g.f,' g')}
 function pfTag(k){return `<span class="tag ${EX[k].pf}">${EX[k].pf==='y'?'every PF':EX[k].pf==='m'?'most PF':'some PF'}</span>`}
+/* exercise photos + step-by-step (free-exercise-db, public domain) — available when self-hosted */
+function exInfo(id){return S.exinfo&&S.exinfo[id]}
+function exThumb(id){const i=exInfo(id);return i?`<img class="thumb" src="${i.imgs[0]}" alt="" loading="lazy">`:''}
+function howTo(id){const i=exInfo(id),e=EX[id];if(!i)return;
+  const ov=modal(`<div class="row between nowrap"><div><div class="eyebrow">${esc(PAT[e.p])} · ${esc(e.eq)}</div><h2>${esc(e.n)}</h2></div><button class="btn sm" id="x">Close</button></div>
+   <div class="howto stack" style="margin-top:10px"><div class="row nowrap">${i.imgs.map(s=>`<img src="${s}" alt="${esc(e.n)} position" style="flex:1;min-width:0">`).join('')}</div>
+   ${e.cue?`<p><b>Coach cue:</b> ${esc(e.cue)}</p>`:''}<ol>${i.steps.map(s=>`<li>${esc(s)}</li>`).join('')}</ol>
+   <p class="small muted">Primary: ${esc(i.muscles.join(', '))}. Photos and steps from free-exercise-db (public domain); shown for the closest match, "${esc(i.name)}".</p></div>`);
+  $('#x',ov).onclick=()=>ov.remove()}
 
 /* ================= TODAY ================= */
 function vToday(m){
@@ -425,7 +451,7 @@ function swapExercise(cur,cb){
   const e=EX[cur.id];const alts=Object.keys(EX).filter(k=>k!==cur.id&&EX[k].p===e.p).sort((a,b)=>(EX[a].pf>EX[b].pf?1:-1));
   const ov=modal(`<div class="row between nowrap"><div><div class="eyebrow">Replace · ${esc(PAT[e.p])}</div><h2>${esc(e.n)}</h2></div><button class="btn sm" id="x">Close</button></div>
    <p class="small muted">Same movement pattern, so the day's training goal is unchanged. Ranked by what Planet Fitness reliably has.</p>
-   <div class="stack">${alts.map(k=>`<button class="opt" data-k="${k}"><span><b>${esc(EX[k].n)}</b> ${pfTag(k)}<br><span class="small muted">${esc(EX[k].eq)}${EX[k].cue?' · '+esc(EX[k].cue):''}</span></span><span class="k">${cur.sets}×${esc(cur.reps)}</span></button>`).join('')}</div>
+   <div class="stack">${alts.map(k=>`<button class="opt" data-k="${k}">${exThumb(k)}<span style="flex:1;min-width:0"><b>${esc(EX[k].n)}</b> ${pfTag(k)}<br><span class="small muted">${esc(EX[k].eq)}${EX[k].cue?' · '+esc(EX[k].cue):''}</span></span><span class="k">${cur.sets}×${esc(cur.reps)}</span></button>`).join('')}</div>
    <div class="row" style="margin-top:12px"><button class="btn" id="other" style="flex:1">Any other exercise…</button><button class="btn" id="ai" style="flex:1">Ask Claude</button></div><div id="aiOut" class="ai" hidden style="margin-top:8px"></div>`);
   ov.querySelectorAll('.opt').forEach(b=>b.onclick=()=>{cb({...cur,id:b.dataset.k});ov.remove()});
   $('#other',ov).onclick=()=>{ov.remove();pickExercise(cur,cb)};
@@ -434,7 +460,7 @@ function swapExercise(cur,cb){
 }
 function pickExercise(cur,cb){
   const ov=modal(`<div class="row between nowrap"><h2>Exercise library</h2><button class="btn sm" id="x">Close</button></div><input id="q" placeholder="Search name, pattern or equipment" style="width:100%;margin:10px 0"><div class="chips" id="pchips"><button class="chip" data-p="" aria-pressed="true">All</button>${Object.entries(PAT).map(([k,v])=>`<button class="chip" data-p="${k}" aria-pressed="false">${esc(v)}</button>`).join('')}</div><div class="stack" id="list" style="margin-top:8px"></div>`);
-  const list=$('#list',ov);let pat='';function draw(q){q=(q||'').toLowerCase();list.innerHTML=Object.keys(EX).filter(k=>(!pat||EX[k].p===pat)&&(!q||(EX[k].n+' '+PAT[EX[k].p]+' '+EX[k].eq).toLowerCase().includes(q))).map(k=>`<button class="opt" data-k="${k}"><span><b>${esc(EX[k].n)}</b><br><span class="small muted">${esc(PAT[EX[k].p])} · ${esc(EX[k].eq)}</span></span>${pfTag(k)}</button>`).join('');
+  const list=$('#list',ov);let pat='';function draw(q){q=(q||'').toLowerCase();list.innerHTML=Object.keys(EX).filter(k=>(!pat||EX[k].p===pat)&&(!q||(EX[k].n+' '+PAT[EX[k].p]+' '+EX[k].eq).toLowerCase().includes(q))).map(k=>`<button class="opt" data-k="${k}">${exThumb(k)}<span style="flex:1;min-width:0"><b>${esc(EX[k].n)}</b><br><span class="small muted">${esc(PAT[EX[k].p])} · ${esc(EX[k].eq)}</span></span>${pfTag(k)}</button>`).join('');
     list.querySelectorAll('.opt').forEach(b=>b.onclick=()=>{cb(cur?{...cur,id:b.dataset.k}:{id:b.dataset.k,sets:3,reps:'10'});ov.remove()})}
   draw('');$('#q',ov).oninput=e=>draw(e.target.value);$('#x',ov).onclick=()=>ov.remove();
   ov.querySelectorAll('#pchips .chip').forEach(c=>c.onclick=()=>{pat=c.dataset.p;ov.querySelectorAll('#pchips .chip').forEach(x=>x.setAttribute('aria-pressed',x===c));draw($('#q',ov).value)});
@@ -455,13 +481,15 @@ function vTrain(m){
    <div class="stack" style="margin-top:10px"><button class="btn primary block" id="finish">${log.done?'Marked done ✓':'Finish & mark done'}</button>${log.done?'<button class="btn ghost" id="undone">Un-mark</button>':''}<span class="small muted" id="savedAt"></span></div></div>
    <div class="restbar" id="restbar" hidden><span class="timer" id="timer">—</span><span class="small">rest</span><span style="flex:1"></span><button id="t90">90s</button><button id="t120">2:00</button><button id="tstop">✕</button></div>`;
   const exs=$('#exs');
-  function draw(){exs.innerHTML=log.ex.length?log.ex.map((e,i)=>{const pl=p.ex[i];const pr=progression(pl,d);const sec=String(pl.reps).includes('s');return `<div class="ex" data-i="${i}"><div class="hd"><div style="min-width:0"><h3>${esc(EX[e.id].n)}</h3><div class="small muted">Target <span class="num">${pl.sets}×${esc(pl.reps)}</span> · ${esc(EX[e.id].eq)}</div>${EX[e.id].cue?`<div class="small muted">${esc(EX[e.id].cue)}</div>`:''}${pr?`<div class="prev">${esc(pr.txt)}${pr.bump?` <span class="pill ok">+${pr.bump} lb today</span>`:''}</div>`:'<div class="prev">First time — leave 2 reps in the tank</div>'}</div><button class="btn sm" data-sw="${i}">Swap</button></div>
+  function draw(){exs.innerHTML=log.ex.length?log.ex.map((e,i)=>{const pl=p.ex[i];const pr=progression(pl,d);const sec=String(pl.reps).includes('s');return `<div class="ex" data-i="${i}"><div class="hd"><div style="min-width:0"><h3>${esc(EX[e.id].n)}</h3><div class="small muted">Target <span class="num">${pl.sets}×${esc(pl.reps)}</span> · ${esc(EX[e.id].eq)}</div>${EX[e.id].cue?`<div class="small muted">${esc(EX[e.id].cue)}</div>`:''}${pr?`<div class="prev">${esc(pr.txt)}${pr.bump?` <span class="pill ok">+${pr.bump} lb today</span>`:''}</div>`:'<div class="prev">First time — leave 2 reps in the tank</div>'}</div><div class="stack" style="gap:6px"><button class="btn sm" data-sw="${i}">Swap</button>${exInfo(e.id)?`<button class="btn sm ghost" data-how="${e.id}">How to</button>`:''}</div></div>
+    ${exInfo(e.id)?`<div class="thumbs" data-how="${e.id}" role="button" tabindex="0" aria-label="How to ${esc(EX[e.id].n)}">${exInfo(e.id).imgs.map(s=>`<img src="${s}" alt="" loading="lazy">`).join('')}</div>`:''}
     <div class="sets"><span class="lbl">Set</span><span class="lbl">lb</span><span class="lbl">${sec?'sec':'reps'}</span><span></span>
     ${e.sets.map((s,j)=>`<span class="num muted">${j+1}</span><input type="number" step="2.5" inputmode="decimal" value="${esc(s.w)}" placeholder="${pr&&pr.w?pr.w+(pr.bump||0):'—'}" data-i="${i}" data-j="${j}" data-k="w" aria-label="weight"><input type="number" inputmode="numeric" value="${esc(s.r)}" placeholder="${esc(String(pl.reps).replace('s',''))}" data-i="${i}" data-j="${j}" data-k="r" aria-label="reps"><button class="chk ${s.done?'on':''}" data-i="${i}" data-j="${j}" aria-label="set done">✓</button>`).join('')}</div>
     <div class="row" style="margin-top:8px"><button class="btn sm ghost" data-add="${i}">+ add set</button></div></div>`}).join(''):`<div class="card"><p>No sets to log for this session. ${tp.k==='cardio'?'Do the cardio, then mark it done below.':'Enjoy the walk.'}</p></div>`;
     exs.querySelectorAll('input').forEach(inp=>inp.onchange=()=>{log.ex[+inp.dataset.i].sets[+inp.dataset.j][inp.dataset.k]=inp.value;persist()});
     exs.querySelectorAll('.chk').forEach(b=>b.onclick=()=>{const s=log.ex[+b.dataset.i].sets[+b.dataset.j];const inps=exs.querySelectorAll(`input[data-i="${b.dataset.i}"][data-j="${b.dataset.j}"]`);if(!s.done){s.w=inps[0].value||(inps[0].placeholder!=='—'?inps[0].placeholder:'');s.r=inps[1].value||inps[1].placeholder}s.done=!s.done;persist();draw();if(s.done)startTimer(90)});
     exs.querySelectorAll('[data-add]').forEach(b=>b.onclick=()=>{log.ex[+b.dataset.add].sets.push({w:'',r:'',done:false});persist();draw()});
+    exs.querySelectorAll('[data-how]').forEach(b=>b.onclick=()=>howTo(b.dataset.how));
     exs.querySelectorAll('[data-sw]').forEach(b=>b.onclick=()=>swapExercise(p.ex[+b.dataset.sw],async e=>{if(!S.plan.days[d])S.plan.days[d]={tpl:p.tpl,ex:p.ex};S.plan.days[d].ex[+b.dataset.sw]=e;await save('plan','days',S.plan);render()}));
   }
   let pt=null;function persist(){clearTimeout(pt);pt=setTimeout(async()=>{log.notes=$('#notes').value;await save('logs',d,log);const s=$('#savedAt');if(s)s.textContent='saved'},400)}
@@ -483,6 +511,8 @@ function vEat(m){
    <div class="card hero"><h2>Eaten today</h2><div class="stack" style="margin:8px 0">${macroBars(d)}</div>
     <div class="eyebrow" style="margin-top:8px">Planned meals · tap to log, "swap" to change ${DOWS[dow]}s</div>
     ${SLOTS.map(([k,l])=>{const id=mealId(dow,k);const mm=MEALS[id];const on=items.some(i=>i.from===id);return `<div class="food"><input type="checkbox" id="m_${k}" data-meal="${id}" data-slot="${k}" ${on?'checked':''}><label for="m_${k}"><div class="eyebrow">${l}</div>${esc(mm.n)}</label><div style="text-align:right"><span class="k">${mm.k} · ${mm.p}P</span><br><button class="btn sm ghost" data-swap="${k}">swap</button></div></div>`}).join('')}
+    <div class="eyebrow" style="margin-top:12px">Add by camera</div>
+    ${S.mode==='server'?`<div class="capture"><button class="btn" id="capPhoto"><svg viewBox="0 0 24 24"><path d="M4 7h3l2-3h6l2 3h3v12H4z"/><circle cx="12" cy="13" r="3.5"/></svg>Photo</button><button class="btn" id="capScan"><svg viewBox="0 0 24 24"><path d="M3 7V4h3M21 7V4h-3M3 17v3h3M21 17v3h-3M7 8v8M10 8v8M13 8v8M17 8v8"/></svg>Barcode</button><button class="btn" id="capSearch"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>Search</button></div><input type="file" id="foodPhoto" accept="image/*" capture="environment" hidden>`:`<p class="small muted">Photo, barcode and search logging run on the self-hosted app (recomp8-production.up.railway.app).</p>`}
     <div class="eyebrow" style="margin-top:12px">Other food</div>
     ${items.filter(i=>!i.from).map((i,ix)=>`<div class="food"><button class="btn sm ghost" data-rmf="${ix}" aria-label="Remove">✕</button><div>${esc(i.n)}</div><span class="k">${i.k} · ${i.p}P ${i.c}C ${i.f}F</span></div>`).join('')||'<p class="small muted">Nothing extra logged.</p>'}
     <form id="addF" class="stack" style="margin-top:8px"><input id="fn" placeholder="Food (e.g. 2 slices pizza)" required><div class="row nowrap"><input type="number" id="fk" placeholder="kcal" required inputmode="numeric"><input type="number" id="fp" placeholder="P g" inputmode="numeric"><input type="number" id="fc" placeholder="C g" inputmode="numeric"><input type="number" id="ff" placeholder="F g" inputmode="numeric"></div><button class="btn">Add food</button></form>
@@ -503,6 +533,57 @@ function vEat(m){
   m.querySelectorAll('[data-rmf]').forEach(b=>b.onclick=async()=>{const extra=items.filter(i=>!i.from);extra.splice(+b.dataset.rmf,1);await save('food',d,{date:d,items:[...items.filter(i=>i.from),...extra]});render()});
   $('#addF').onsubmit=async e=>{e.preventDefault();items.push({n:$('#fn').value,k:+$('#fk').value||0,p:+$('#fp').value||0,c:+$('#fc').value||0,f:+$('#ff').value||0});await save('food',d,{date:d,items});render()};
   $('#grocery').onclick=groceryList;
+  if(S.mode==='server'){$('#capPhoto').onclick=()=>$('#foodPhoto').click();$('#foodPhoto').onchange=e=>{const f=e.target.files[0];if(f)photoFood(d,f);e.target.value=''};$('#capScan').onclick=()=>scanBarcode(d);$('#capSearch').onclick=()=>searchFoodSheet(d)}
+}
+/* ---------- food capture ---------- */
+function shrinkImage(file,max=1280){return new Promise((res,rej)=>{const img=new Image();const url=URL.createObjectURL(file);img.onload=()=>{const s=Math.min(1,max/Math.max(img.width,img.height));const c=document.createElement('canvas');c.width=Math.round(img.width*s);c.height=Math.round(img.height*s);c.getContext('2d').drawImage(img,0,0,c.width,c.height);URL.revokeObjectURL(url);res(c.toDataURL('image/jpeg',.82))};img.onerror=rej;img.src=url})}
+async function logItems(d,items){const f=S.food[d]||{date:d,items:[]};const arr=f.items.slice();items.forEach(i=>arr.push({n:i.n,k:Math.round(+i.k||0),p:Math.round(+i.p||0),c:Math.round(+i.c||0),f:Math.round(+i.f||0),src:i.src||''}));await save('food',d,{date:d,items:arr});toast('Logged '+items.length+' item'+(items.length>1?'s':''));render()}
+async function photoFood(d,file){
+  const ov=modal(`<h2>Reading the photo…</h2><img class="preview" id="pv" alt=""><p class="small muted" id="pvmsg">Claude is estimating portions and macros. 5–15 seconds.</p>`);
+  let dataUrl;try{dataUrl=await shrinkImage(file);$('#pv',ov).src=dataUrl}catch(e){$('#pvmsg',ov).textContent='Could not read that image.';return}
+  try{const r=await api('POST','/food/analyze',{image:dataUrl.split(',')[1],mime:'image/jpeg'});ov.remove();reviewFood(d,r.items||[],r.note,dataUrl,'photo')}
+  catch(e){const msg=e.code==='http_503'?'Photo logging needs an Anthropic API key on the server (Railway → recomp8 → Variables → ANTHROPIC_API_KEY).':e.code==='http_502'?'The estimator could not read that photo. Try closer, with better light.':'Could not analyze ('+(e.code||'error')+').';$('#pvmsg',ov).textContent=msg;ov.querySelector('h2').textContent='Photo not logged'}
+}
+function reviewFood(d,items,note,preview,src){
+  if(!items.length){const ov=modal(`<h2>No food found</h2><p class="small muted">${esc(note||'Try a closer shot with the whole plate in frame.')}</p><button class="btn block" id="x">Close</button>`);$('#x',ov).onclick=()=>ov.remove();return}
+  const ov=modal(`<div class="row between nowrap"><h2>Confirm and log</h2><button class="btn sm" id="x">Close</button></div>${preview?`<img class="preview" src="${preview}" alt="" style="margin:8px 0">`:''}${note?`<p class="small muted">${esc(note)}</p>`:''}
+   <div id="fl">${items.map((it,i)=>`<div class="fitem"><input type="checkbox" checked data-i="${i}"><div><div class="row between nowrap"><input value="${esc(it.n||it.name)}" data-i="${i}" data-k="n" aria-label="Name" style="flex:1"><span class="conf ${esc(it.confidence||'')}">${esc(it.confidence||'')}</span></div>${it.portion?`<div class="small muted">${esc(it.portion)}</div>`:''}<div class="nums"><label>kcal<input type="number" inputmode="numeric" value="${Math.round(it.k||it.kcal||0)}" data-i="${i}" data-k="k"></label><label>P g<input type="number" inputmode="numeric" value="${Math.round(it.p||0)}" data-i="${i}" data-k="p"></label><label>C g<input type="number" inputmode="numeric" value="${Math.round(it.c||0)}" data-i="${i}" data-k="c"></label><label>F g<input type="number" inputmode="numeric" value="${Math.round(it.f||0)}" data-i="${i}" data-k="f"></label></div></div></div>`).join('')}</div>
+   <p class="small muted" style="margin:8px 0">Estimates, not measurements. Nudge the numbers if you know the portion, then log.</p>
+   <button class="btn primary block" id="logBtn">Log to ${esc(fmtD(d))}</button>`);
+  const vals=items.map(it=>({n:it.n||it.name,k:it.k||it.kcal||0,p:it.p||0,c:it.c||0,f:it.f||0,src}));
+  ov.querySelectorAll('input[data-k]').forEach(inp=>inp.oninput=()=>{vals[+inp.dataset.i][inp.dataset.k]=inp.dataset.k==='n'?inp.value:+inp.value});
+  $('#x',ov).onclick=()=>ov.remove();
+  $('#logBtn',ov).onclick=async()=>{const sel=[...ov.querySelectorAll('input[type=checkbox]')].filter(c=>c.checked).map(c=>vals[+c.dataset.i]);if(!sel.length){toast('Nothing selected');return}ov.remove();await logItems(d,sel)};
+}
+function loadScript(src){return new Promise((res,rej)=>{if(document.querySelector(`script[src="${src}"]`))return res();const s=document.createElement('script');s.src=src;s.onload=res;s.onerror=rej;document.head.appendChild(s)})}
+async function scanBarcode(d){
+  const ov=modal(`<div class="row between nowrap"><h2>Scan a barcode</h2><button class="btn sm" id="x">Close</button></div><p class="small muted">Point at the UPC on the package. Looks up Open Food Facts.</p><div id="reader"></div><p class="small muted" id="scmsg" style="margin-top:8px">Starting camera…</p><form id="manualCode" class="row nowrap" style="margin-top:8px"><input id="codeIn" inputmode="numeric" placeholder="or type the barcode" style="flex:1"><button class="btn">Look up</button></form>`);
+  let scanner=null;const stop=async()=>{try{if(scanner)await scanner.stop()}catch(e){}};
+  $('#x',ov).onclick=async()=>{await stop();ov.remove()};
+  const lookup=async code=>{await stop();$('#scmsg',ov).textContent='Looking up '+code+'…';try{const p=await api('GET','/food/barcode/'+encodeURIComponent(code));ov.remove();productSheet(d,p)}catch(e){$('#scmsg',ov).textContent=e.code==='http_404'?'Not in Open Food Facts. Try Search instead.':'Lookup failed ('+(e.code||'error')+').'}};
+  $('#manualCode',ov).onsubmit=e=>{e.preventDefault();const c=$('#codeIn',ov).value.replace(/\D/g,'');if(c)lookup(c)};
+  try{await loadScript('https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js');scanner=new Html5Qrcode('reader');let fired=false;await scanner.start({facingMode:'environment'},{fps:10,qrbox:{width:260,height:150},aspectRatio:1.5},code=>{if(fired)return;fired=true;lookup(code)},()=>{});$('#scmsg',ov).textContent='Scanning…'}
+  catch(e){$('#scmsg',ov).textContent='Camera unavailable here; type the barcode below.'}
+}
+function productSheet(d,p){
+  const g0=p.servingGrams||100;
+  const ov=modal(`<div class="row between nowrap"><div><div class="eyebrow">${esc(p.brand||p.source||'')}</div><h2>${esc(p.name)}</h2></div><button class="btn sm" id="x">Close</button></div>
+   <p class="small muted">Per 100 g: ${Math.round(p.per100.kcal)} kcal · ${Math.round(p.per100.p)}P ${Math.round(p.per100.c)}C ${Math.round(p.per100.f)}F${p.serving?' · serving '+esc(p.serving):''}</p>
+   <div class="row nowrap" style="margin-top:8px"><label class="f">Amount (g)<input type="number" id="gr" inputmode="decimal" value="${g0}"></label><div class="row" style="flex:1">${[0.5,1,2].map(n=>`<button class="btn sm" data-x="${n}">${n}× serving</button>`).join('')}</div></div>
+   <div class="kpi" style="margin-top:10px"><div><b id="ok">0</b><span>kcal</span></div><div><b id="op">0</b><span>protein g</span></div><div><b id="oc">0</b><span>carbs g</span></div><div><b id="of">0</b><span>fat g</span></div></div>
+   <button class="btn primary block" id="logBtn" style="margin-top:12px">Log to ${esc(fmtD(d))}</button>`);
+  const calc=()=>{const g=+$('#gr',ov).value||0;const m=g/100;const v={k:p.per100.kcal*m,p:p.per100.p*m,c:p.per100.c*m,f:p.per100.f*m};$('#ok',ov).textContent=Math.round(v.k);$('#op',ov).textContent=Math.round(v.p);$('#oc',ov).textContent=Math.round(v.c);$('#of',ov).textContent=Math.round(v.f);return v};
+  calc();$('#gr',ov).oninput=calc;ov.querySelectorAll('[data-x]').forEach(b=>b.onclick=()=>{$('#gr',ov).value=Math.round(g0*+b.dataset.x);calc()});
+  $('#x',ov).onclick=()=>ov.remove();
+  $('#logBtn',ov).onclick=async()=>{const v=calc();const g=+$('#gr',ov).value||0;ov.remove();await logItems(d,[{n:p.name+(p.brand?' ('+p.brand+')':'')+' · '+g+' g',...v,src:p.source}])};
+}
+function searchFoodSheet(d){
+  const ov=modal(`<div class="row between nowrap"><h2>Search foods</h2><button class="btn sm" id="x">Close</button></div><form id="sf2" class="row nowrap" style="margin:10px 0"><input id="q2" placeholder="e.g. chicken breast, Chobani, Chipotle bowl" style="flex:1" autofocus><button class="btn primary">Go</button></form><div class="stack" id="res"><p class="small muted">USDA FoodData Central — generic and branded foods, per 100 g.</p></div>`);
+  $('#x',ov).onclick=()=>ov.remove();
+  $('#sf2',ov).onsubmit=async e=>{e.preventDefault();const q=$('#q2',ov).value.trim();if(!q)return;const res=$('#res',ov);res.innerHTML='<p class="small muted">Searching…</p>';
+    try{const r=await api('GET','/food/search?q='+encodeURIComponent(q));res.innerHTML=r.foods.length?r.foods.map((f,i)=>`<button class="opt" data-i="${i}"><span style="flex:1;min-width:0"><b>${esc(f.name)}</b>${f.brand?`<br><span class="small muted">${esc(f.brand)}</span>`:''}</span><span class="k">${Math.round(f.per100.kcal)} kcal<br>${Math.round(f.per100.p)} P /100g</span></button>`).join(''):'<p class="small muted">No matches. Try fewer words.</p>';
+      res.querySelectorAll('.opt').forEach(b=>b.onclick=()=>{ov.remove();productSheet(d,{...r.foods[+b.dataset.i],source:r.source})})}
+    catch(err){res.innerHTML='<p class="small muted">'+(err.code==='http_429'?'USDA demo key rate-limited for this hour. Add FDC_API_KEY on the server for unlimited lookups.':'Search failed ('+(err.code||'error')+').')+'</p>'}};
 }
 function swapMeal(dow,slot){
   const curId=mealId(dow,slot);const cur=MEALS[curId];
@@ -640,7 +721,7 @@ function askPin(){return new Promise(res=>{const ov=document.createElement('div'
   }else if(location.protocol.startsWith('http')){
     // self-hosted: probe the API; ask for the PIN once
     for(let tries=0;tries<3;tries++){
-      try{const r=await fetch('/api/ping',{headers:{'x-key':apiKey()}});if(r.status===401){await askPin();continue}if(r.ok){S.mode='server'}break}catch(e){break}
+      try{const r=await fetch('/api/ping',{headers:{'x-key':apiKey()}});if(r.status===401){await askPin();continue}if(r.ok){S.mode='server';fetch('/exinfo.json').then(x=>x.json()).then(j=>{S.exinfo=j;if(S.view==='train')render()}).catch(()=>{})}break}catch(e){break}
     }
   }
   try{await loadAll()}catch(e){toast('Could not load saved data');if(S.mode==='server'){S.mode='local';try{await loadAll()}catch(e2){}}}
