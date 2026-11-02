@@ -110,6 +110,9 @@ td{padding:8px;border-bottom:1px solid var(--line);vertical-align:middle}
 .chartbox{position:relative;height:220px;width:100%}
 .xrow{display:flex;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}
 .xrow .nm{flex:1;min-width:0}
+.exname{background:none;border:0;padding:0;font:inherit;font-weight:600;color:var(--fg);text-align:left;cursor:pointer;text-decoration:underline;text-decoration-color:var(--line);text-underline-offset:3px}
+.exname.h3{font-family:var(--display);font-weight:700;font-size:18px;line-height:1.05}
+.qm{display:inline-grid;place-items:center;width:16px;height:16px;border-radius:50%;background:var(--accent);color:var(--accent-ink);font:700 11px var(--body);vertical-align:middle;margin-left:2px}
 .thumbs{display:flex;gap:6px;margin-top:8px}
 .thumbs img{height:84px;width:auto;border-radius:8px;border:1px solid var(--line);background:#fff;object-fit:cover}
 .thumb{width:56px;height:56px;border-radius:8px;border:1px solid var(--line);background:#fff;object-fit:cover;flex:none}
@@ -328,7 +331,7 @@ function render(){
   ({today:vToday,calendar:vCalendar,train:vTrain,eat:vEat,body:vBody,settings:vSettings})[S.view](m);
   window.scrollTo(0,0);
 }
-function modal(html){const ov=document.createElement('div');ov.className='ov';ov.innerHTML='<div class="md" role="dialog" aria-modal="true">'+html+'</div>';ov.addEventListener('click',e=>{if(e.target===ov)ov.remove()});document.body.appendChild(ov);return ov}
+function modal(html){const ov=document.createElement('div');ov.className='ov';ov.style.zIndex=20+document.querySelectorAll('.ov').length;ov.innerHTML='<div class="md" role="dialog" aria-modal="true">'+html+'</div>';ov.addEventListener('click',e=>{if(e.target===ov)ov.remove()});document.body.appendChild(ov);return ov}
 function dayNav(d,view,extra){return `<div class="dnav"><button class="ib" id="dprev" aria-label="Previous day" ${d<=START?'disabled':''}><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button><input type="date" id="dsel" value="${d}" min="${START}" max="${END}" aria-label="Date" style="min-height:40px"><button class="ib" id="dnext" aria-label="Next day" ${d>=END?'disabled':''}><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>${extra||''}</div>`}
 function wireDayNav(d,view){$('#dsel').onchange=e=>go(view,clampDay(e.target.value));$('#dprev').onclick=()=>go(view,addDays(d,-1));$('#dnext').onclick=()=>go(view,addDays(d,1))}
 
@@ -349,12 +352,12 @@ function macroBars(s){const t=macros(s),g=S.settings;const row=(l,v,goal,u)=>`<d
 function pfTag(k){return `<span class="tag ${EX[k].pf}">${EX[k].pf==='y'?'every PF':EX[k].pf==='m'?'most PF':'some PF'}</span>`}
 /* exercise photos + step-by-step (free-exercise-db, public domain) — available when self-hosted */
 function exInfo(id){return S.exinfo&&S.exinfo[id]}
+function exName(id,cls){return `<button class="exname ${cls||''}" data-how="${id}" type="button">${esc(EX[id].n)}${exInfo(id)?' <span class="qm">?</span>':''}</button>`}
 function exThumb(id){const i=exInfo(id);return i?`<img class="thumb" src="${i.imgs[0]}" alt="" loading="lazy">`:''}
-function howTo(id){const i=exInfo(id),e=EX[id];if(!i)return;
+function howTo(id){const i=exInfo(id)||{imgs:[],steps:[],muscles:[],name:''},e=EX[id];if(!e)return;
   const ov=modal(`<div class="row between nowrap"><div><div class="eyebrow">${esc(PAT[e.p])} · ${esc(e.eq)}</div><h2>${esc(e.n)}</h2></div><button class="btn sm" id="x">Close</button></div>
-   <div class="howto stack" style="margin-top:10px"><div class="row nowrap">${i.imgs.map(s=>`<img src="${s}" alt="${esc(e.n)} position" style="flex:1;min-width:0">`).join('')}</div>
-   ${e.cue?`<p><b>Coach cue:</b> ${esc(e.cue)}</p>`:''}<ol>${i.steps.map(s=>`<li>${esc(s)}</li>`).join('')}</ol>
-   <p class="small muted">Primary: ${esc(i.muscles.join(', '))}. Photos and steps from free-exercise-db (public domain); shown for the closest match, "${esc(i.name)}".</p></div>`);
+   <div class="howto stack" style="margin-top:10px">${i.imgs.length?'':'<p class="small muted">Photos and step-by-step load on the self-hosted app (recomp8-production.up.railway.app).</p>'}<div class="row nowrap">${i.imgs.map(s=>`<img src="${s}" alt="${esc(e.n)} position" style="flex:1;min-width:0">`).join('')}</div>
+   ${e.cue?`<p><b>Coach cue:</b> ${esc(e.cue)}</p>`:''}${i.steps.length?`<ol>${i.steps.map(s=>`<li>${esc(s)}</li>`).join('')}</ol><p class="small muted">Primary: ${esc(i.muscles.join(', '))}. Photos and steps from free-exercise-db (public domain); shown for the closest match, "${esc(i.name)}".</p>`:`<p><b>Pattern:</b> ${esc(PAT[e.p])} · <b>Equipment:</b> ${esc(e.eq)}</p>`}</div>`);
   $('#x',ov).onclick=()=>ov.remove()}
 
 /* ================= TODAY ================= */
@@ -370,7 +373,7 @@ function vToday(m){
    <div class="card hero">
     <div class="row between"><h2>Today's session</h2>${t?`<span class="pill ${t.k}">${t.k}</span>`:''}</div>
     ${t?`<h3 style="margin-top:6px">${esc(t.n)}</h3><p class="small muted" style="margin:4px 0">${esc(t.d)}</p>
-     ${day.ex.length?`<div style="margin:6px 0">${day.ex.map(e=>`<div class="xrow"><span class="nm">${esc(EX[e.id].n)}</span><span class="num muted small">${e.sets}×${esc(e.reps)}</span></div>`).join('')}</div>`:''}
+     ${day.ex.length?`<div style="margin:6px 0">${day.ex.map(e=>`<div class="xrow"><span class="nm">${exName(e.id)}</span><span class="num muted small">${e.sets}×${esc(e.reps)}</span></div>`).join('')}</div>`:''}
      <div class="stack" style="margin-top:10px"><button class="btn primary block" id="tdStart">${dayDone(d)?'View log ✓':(dayLog(d)?'Continue':'Start')} ${t.k==='lift'?'workout':'session'}</button><button class="btn" id="tdEdit">Change today's session</button></div>`
      :`<p class="small muted">The plan runs Nov 2 – Dec 31, 2026.</p>`}
    </div>
@@ -433,7 +436,7 @@ function editDay(d){
    </div>`);
   const state={tpl:p.tpl,ex:p.ex.map(e=>({...e}))};
   const list=$('#exList',ov);
-  function draw(){list.innerHTML=state.ex.length?`<div class="eyebrow" style="margin-bottom:4px">Exercises</div>`+state.ex.map((e,i)=>`<div class="xrow"><div class="nm"><b>${esc(EX[e.id].n)}</b><div class="small muted">${esc(PAT[EX[e.id].p])} · ${esc(EX[e.id].eq)}</div></div><input type="number" value="${e.sets}" min="1" max="8" data-i="${i}" data-k="sets" aria-label="sets" style="width:58px;text-align:center"><span class="muted">×</span><input value="${esc(e.reps)}" data-i="${i}" data-k="reps" aria-label="reps" style="width:64px;font-family:var(--mono);text-align:center"><button class="btn sm" data-sw="${i}">Swap</button><button class="btn sm ghost" data-rm="${i}" aria-label="Remove">✕</button></div>`).join(''):'<p class="small muted">No lifts on this day.</p>';
+  function draw(){list.innerHTML=state.ex.length?`<div class="eyebrow" style="margin-bottom:4px">Exercises</div>`+state.ex.map((e,i)=>`<div class="xrow"><div class="nm">${exName(e.id)}<div class="small muted">${esc(PAT[EX[e.id].p])} · ${esc(EX[e.id].eq)}</div></div><input type="number" value="${e.sets}" min="1" max="8" data-i="${i}" data-k="sets" aria-label="sets" style="width:58px;text-align:center"><span class="muted">×</span><input value="${esc(e.reps)}" data-i="${i}" data-k="reps" aria-label="reps" style="width:64px;font-family:var(--mono);text-align:center"><button class="btn sm" data-sw="${i}">Swap</button><button class="btn sm ghost" data-rm="${i}" aria-label="Remove">✕</button></div>`).join(''):'<p class="small muted">No lifts on this day.</p>';
     list.querySelectorAll('input').forEach(inp=>inp.onchange=()=>{state.ex[+inp.dataset.i][inp.dataset.k]=inp.dataset.k==='sets'?+inp.value:inp.value});
     list.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{state.ex.splice(+b.dataset.rm,1);draw()});
     list.querySelectorAll('[data-sw]').forEach(b=>b.onclick=()=>swapExercise(state.ex[+b.dataset.sw],e=>{state.ex[+b.dataset.sw]=e;draw()}));
@@ -481,7 +484,7 @@ function vTrain(m){
    <div class="stack" style="margin-top:10px"><button class="btn primary block" id="finish">${log.done?'Marked done ✓':'Finish & mark done'}</button>${log.done?'<button class="btn ghost" id="undone">Un-mark</button>':''}<span class="small muted" id="savedAt"></span></div></div>
    <div class="restbar" id="restbar" hidden><span class="timer" id="timer">—</span><span class="small">rest</span><span style="flex:1"></span><button id="t90">90s</button><button id="t120">2:00</button><button id="tstop">✕</button></div>`;
   const exs=$('#exs');
-  function draw(){exs.innerHTML=log.ex.length?log.ex.map((e,i)=>{const pl=p.ex[i];const pr=progression(pl,d);const sec=String(pl.reps).includes('s');return `<div class="ex" data-i="${i}"><div class="hd"><div style="min-width:0"><h3>${esc(EX[e.id].n)}</h3><div class="small muted">Target <span class="num">${pl.sets}×${esc(pl.reps)}</span> · ${esc(EX[e.id].eq)}</div>${EX[e.id].cue?`<div class="small muted">${esc(EX[e.id].cue)}</div>`:''}${pr?`<div class="prev">${esc(pr.txt)}${pr.bump?` <span class="pill ok">+${pr.bump} lb today</span>`:''}</div>`:'<div class="prev">First time — leave 2 reps in the tank</div>'}</div><div class="stack" style="gap:6px"><button class="btn sm" data-sw="${i}">Swap</button>${exInfo(e.id)?`<button class="btn sm ghost" data-how="${e.id}">How to</button>`:''}</div></div>
+  function draw(){exs.innerHTML=log.ex.length?log.ex.map((e,i)=>{const pl=p.ex[i];const pr=progression(pl,d);const sec=String(pl.reps).includes('s');return `<div class="ex" data-i="${i}"><div class="hd"><div style="min-width:0"><h3>${exName(e.id,'h3')}</h3><div class="small muted">Target <span class="num">${pl.sets}×${esc(pl.reps)}</span> · ${esc(EX[e.id].eq)}</div>${EX[e.id].cue?`<div class="small muted">${esc(EX[e.id].cue)}</div>`:''}${pr?`<div class="prev">${esc(pr.txt)}${pr.bump?` <span class="pill ok">+${pr.bump} lb today</span>`:''}</div>`:'<div class="prev">First time — leave 2 reps in the tank</div>'}</div><div class="stack" style="gap:6px"><button class="btn sm" data-sw="${i}">Swap</button>${exInfo(e.id)?`<button class="btn sm ghost" data-how="${e.id}">How to</button>`:''}</div></div>
     ${exInfo(e.id)?`<div class="thumbs" data-how="${e.id}" role="button" tabindex="0" aria-label="How to ${esc(EX[e.id].n)}">${exInfo(e.id).imgs.map(s=>`<img src="${s}" alt="" loading="lazy">`).join('')}</div>`:''}
     <div class="sets"><span class="lbl">Set</span><span class="lbl">lb</span><span class="lbl">${sec?'sec':'reps'}</span><span></span>
     ${e.sets.map((s,j)=>`<span class="num muted">${j+1}</span><input type="number" step="2.5" inputmode="decimal" value="${esc(s.w)}" placeholder="${pr&&pr.w?pr.w+(pr.bump||0):'—'}" data-i="${i}" data-j="${j}" data-k="w" aria-label="weight"><input type="number" inputmode="numeric" value="${esc(s.r)}" placeholder="${esc(String(pl.reps).replace('s',''))}" data-i="${i}" data-j="${j}" data-k="r" aria-label="reps"><button class="chk ${s.done?'on':''}" data-i="${i}" data-j="${j}" aria-label="set done">✓</button>`).join('')}</div>
@@ -712,6 +715,8 @@ async function askAI(ov,prompt,fmt){
 
 function askPin(){return new Promise(res=>{const ov=document.createElement('div');ov.className='ov';ov.innerHTML='<div class="md" role="dialog" aria-modal="true"><h2>Enter your app PIN</h2><p class="small muted">Set once per device. It keeps your logs private on the public URL.</p><form id="pf" class="stack"><input id="pin" type="password" inputmode="numeric" autocomplete="current-password" placeholder="PIN" required><button class="btn primary block">Unlock</button></form></div>';document.body.appendChild(ov);$('#pf',ov).onsubmit=e=>{e.preventDefault();try{localStorage.setItem('rc8:key',$('#pin',ov).value.trim())}catch(err){}ov.remove();res()};$('#pin',ov).focus()})}
 
+document.addEventListener('click',e=>{const b=e.target.closest('.exname');if(b){e.preventDefault();e.stopPropagation();howTo(b.dataset.how)}},true);
+
 /* ================= BOOT ================= */
 (async function boot(){
   const v=location.hash.slice(1);if(VIEWS.includes(v))S.view=v;
@@ -721,7 +726,7 @@ function askPin(){return new Promise(res=>{const ov=document.createElement('div'
   }else if(location.protocol.startsWith('http')){
     // self-hosted: probe the API; ask for the PIN once
     for(let tries=0;tries<3;tries++){
-      try{const r=await fetch('/api/ping',{headers:{'x-key':apiKey()}});if(r.status===401){await askPin();continue}if(r.ok){S.mode='server';fetch('/exinfo.json').then(x=>x.json()).then(j=>{S.exinfo=j;if(S.view==='train')render()}).catch(()=>{})}break}catch(e){break}
+      try{const r=await fetch('/api/ping',{headers:{'x-key':apiKey()}});if(r.status===401){await askPin();continue}if(r.ok){S.mode='server';fetch('/exinfo.json').then(x=>x.json()).then(j=>{S.exinfo=j;render()}).catch(()=>{})}break}catch(e){break}
     }
   }
   try{await loadAll()}catch(e){toast('Could not load saved data');if(S.mode==='server'){S.mode='local';try{await loadAll()}catch(e2){}}}
