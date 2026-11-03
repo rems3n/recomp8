@@ -66,6 +66,17 @@ async function analyzeFood(image, mime, hint) {
   const m = text.match(/\{[\s\S]*\}/);
   try { const parsed = JSON.parse(m ? m[0] : text); parsed.model = r.json.model; return { status: 200, body: parsed }; } catch (e) { return { status: 502, body: { error: 'parse', message: 'Could not read the estimate', raw: text.slice(0, 500) } }; }
 }
+const TEXT_PROMPT = `You are a nutrition estimator for a fat-loss tracker. The user typed what they ate. Split it into items, assume typical US portions and preparation when unstated (e.g. "eggs" = large whole eggs fried in a little butter, "toast" = 1 slice standard bread, "chicken" = ~6 oz cooked breast), and estimate calories and macros from USDA-style values. Lean slightly high on calories and slightly low on protein so the user is never under-counted.
+Reply with ONLY a JSON object: {"items":[{"name":"short name","portion":"what you assumed","kcal":0,"p":0,"c":0,"f":0,"confidence":"high|medium|low"}],"note":"one sentence on the biggest assumption"}
+Integers only. If nothing edible is described, return {"items":[],"note":"nothing to log"}.`;
+async function estimateText(text, slot) {
+  if (!ANTHROPIC_KEY) return { status: 503, body: { error: 'no_key', message: 'Add ANTHROPIC_API_KEY on the server to enable text logging.' } };
+  const body = JSON.stringify({ model: ANTHROPIC_MODEL, max_tokens: 700, messages: [{ role: 'user', content: TEXT_PROMPT + (slot ? '\nMeal slot: ' + slot : '') + '\n\nUser ate: ' + String(text).slice(0, 600) }] });
+  const r = await fetchJSON('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01' }, body });
+  if (r.status !== 200 || !r.json) return { status: 502, body: { error: 'upstream', message: (r.json && r.json.error && r.json.error.message) || ('Claude API returned ' + r.status) } };
+  const t = (r.json.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n'); const m = t.match(/\{[\s\S]*\}/);
+  try { return { status: 200, body: JSON.parse(m ? m[0] : t) }; } catch (e) { return { status: 502, body: { error: 'parse', message: 'Could not read the estimate' } }; }
+}
 async function barcode(code) {
   const r = await fetchJSON('https://world.openfoodfacts.org/api/v2/product/' + encodeURIComponent(code) + '.json?fields=product_name,brands,nutriments,serving_size,serving_quantity,image_front_small_url');
   const p = r.json && r.json.product; if (!p) return { status: 404, body: { error: 'not_found', message: 'Not in Open Food Facts. Try a search instead.' } };
@@ -218,6 +229,7 @@ http.createServer(async (req, res) => {
       if (parts[0] === 'chat' && req.method === 'POST') return chat(req, res);
       if (parts[0] === 'food') {
         if (parts[1] === 'analyze' && req.method === 'POST') { const b = await readBody(req, 8e6); if (!b || !b.image) return send(res, 400, { error: 'no image' }); const out = await analyzeFood(b.image, b.mime, b.hint); return send(res, out.status, out.body); }
+        if (parts[1] === 'estimate' && req.method === 'POST') { const b = await readBody(req); if (!b || !String(b.text || '').trim()) return send(res, 400, { error: 'no text' }); const out = await estimateText(b.text, b.slot); return send(res, out.status, out.body); }
         if (parts[1] === 'barcode' && parts[2]) { const out = await barcode(parts[2]); return send(res, out.status, out.body); }
         if (parts[1] === 'search') { const q = url.searchParams.get('q') || ''; if (!q.trim()) return send(res, 400, { error: 'empty' }); const out = await searchFood(q); return send(res, out.status, out.body); }
         return send(res, 404, { error: 'unknown food route' });
