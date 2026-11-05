@@ -115,6 +115,9 @@ function buildContext(today) {
   const body = Object.values(store.body).sort((a, b) => a.date < b.date ? -1 : 1).slice(-14).map(r => `${r.date}: ${r.w} lb${r.fat ? ', ' + r.fat + '% fat' : ''}${r.muscle ? ', ' + r.muscle + ' lb muscle' : ''}`);
   const recent = Object.values(store.logs).filter(l => l.date < today && l.date >= addDays(today, -14)).sort((a, b) => a.date < b.date ? 1 : -1).slice(0, 8).map(l => `${l.date} ${EXLIB.tpl[l.tpl] ? EXLIB.tpl[l.tpl].n : l.tpl}${l.done ? ' (done)' : ' (not finished)'}: ` + (l.ex || []).map(e => exName(e.id) + ' ' + e.sets.filter(s => s.done).map(s => `${s.r}@${s.w || 0}`).join('/')).join('; '));
   const todayLog = store.logs[today];
+  // past-7-day pattern load: done sets per movement pattern, plus missed sessions, so the coach can balance today's change
+  const pat = {}; const missed = []; for (let i = 1; i <= 7; i++) { const d = addDays(today, -i); const pp = planDay(d); const l = store.logs[d]; if (EXLIB.tpl[pp.tpl].k === 'lift' && !(l && l.done)) missed.push(`${DOWS[pd(d).getUTCDay()]} ${d.slice(5)} ${EXLIB.tpl[pp.tpl].n}`); (l && l.ex || []).forEach(e => { const p = (EXLIB.ex[e.id] || {}).p; if (!p) return; const n = e.sets.filter(s => s.done).length; if (n) pat[p] = (pat[p] || 0) + n; }); }
+  const patLine = Object.keys(EXLIB.pat).map(p => `${EXLIB.pat[p]}: ${pat[p] || 0}`).join(', ');
   const food = foodTotals(today); const meals = mealsFor(today);
   const week = []; for (let i = 0; i < 7; i++) { const d = addDays(addDays(START_DATE, (w - 1) * 7), i); if (d > END_DATE) break; const pp = planDay(d); week.push(`${DOWS[pd(d).getUTCDay()]} ${d.slice(5)}: ${EXLIB.tpl[pp.tpl].n}${store.logs[d] && store.logs[d].done ? ' ✓' : ''}`); }
   return `TODAY: ${today} (${DOWS[pd(today).getUTCDay()]}), week ${w} of the 8-week plan (phase: ${['', 'Recover + learn the lifts', 'Find working weights', 'Progressive overload', 'Progressive overload', 'Progressive overload', 'Progressive overload', 'Peak loads', 'Deload + re-test', 'Carry on'][w] || ''}).
@@ -122,6 +125,8 @@ TODAY'S SESSION: ${t.n} [${p.tpl}] — ${t.d}
 Exercises: ${p.ex.length ? p.ex.map(e => `${e.id} (${exName(e.id)}) ${e.sets}x${e.reps}`).join('; ') : 'none (cardio/rest day)'}
 ${todayLog ? 'Logged so far today: ' + (todayLog.ex || []).map(e => exName(e.id) + ' ' + e.sets.filter(s => s.done).map(s => `${s.r}@${s.w || 0}`).join('/')).filter(x => !/ $/.test(x)).join('; ') + (todayLog.done ? ' — marked done' : '') : 'Nothing logged yet today.'}
 THIS WEEK: ${week.join(' | ')}
+PAST 7 DAYS — DONE SETS BY PATTERN: ${patLine}
+PAST 7 DAYS — MISSED LIFT SESSIONS: ${missed.length ? missed.join('; ') : 'none'}
 RECENT SESSIONS (last 14 days): ${recent.length ? recent.join('\n') : 'none yet'}
 BODY (last 14 entries): ${body.length ? body.join('; ') : 'no weigh-ins yet'}
 TARGETS: ${settings.kcal} kcal, ${settings.p} g protein, ${settings.c} g carbs, ${settings.f} g fat per day.
@@ -129,7 +134,7 @@ FOOD TODAY: ${Math.round(food.kcal)} kcal, ${Math.round(food.p)}P ${Math.round(f
 TODAY'S PLANNED MEALS: ${EXLIB.slots.map(([k, l]) => `${l}: ${meals[k].n} [${meals[k].id}] ${meals[k].k} kcal/${meals[k].p}P`).join('; ')}`;
 }
 const SYSTEM_STATIC = `You are the in-app coach for Recomp 8, a personal 8-week fat-loss + muscle-gain tracker (Nov 2 – Dec 31, 2026) for Chris: 33, male, ~188 lb, endurance athlete (just ran the NYC Marathon), new to lifting, IT band history, trains at Planet Fitness (dumbbells to 75 lb, Smith machines, cables, selectorized machines, assisted pull-up, benches; NO squat rack or free barbell). Goal: ~1 lb/week fat loss while adding muscle; protein 180 g/day; lift 4x/week (upper/lower), cardio easy and short, no run over 40 min.
-You answer briefly and concretely, like a good coach texting. Use the tools to CHANGE things when asked (shorten a workout, swap an exercise, move days, log food, log a weigh-in, change a meal) — do not just describe the change. After a tool call, confirm in one or two lines what changed. When shortening a session, keep one compound per main pattern (squat/hinge, push, pull) and cut isolation first; use supersets if helpful (say so in the reps field, e.g. "8-10 (superset)"). Keep IT-band work (hip abduction / Copenhagen) on lower days when possible. Use exercise ids from the library exactly. Never invent exercise ids; pick from the library or ask. Dates are YYYY-MM-DD. If a request is ambiguous, ask one short question.
+You answer briefly and concretely, like a good coach texting. Use the tools to CHANGE things when asked (shorten a workout, swap an exercise, move days, log food, log a weigh-in, change a meal) — do not just describe the change. After a tool call, confirm in one or two lines what changed. When asked to change or rebuild today's workout, read PAST 7 DAYS first: prioritise patterns with few or zero sets this week, fold in a missed session's main lifts, avoid hammering a pattern trained hard yesterday, and keep the 4-day upper/lower rhythm intact. Say in one line why you chose what you chose. When shortening a session, keep one compound per main pattern (squat/hinge, push, pull) and cut isolation first; use supersets if helpful (say so in the reps field, e.g. "8-10 (superset)"). Keep IT-band work (hip abduction / Copenhagen) on lower days when possible. Use exercise ids from the library exactly. Never invent exercise ids; pick from the library or ask. Dates are YYYY-MM-DD. If a request is ambiguous, ask one short question.
 EXERCISE LIBRARY (id: name | pattern | equipment):
 ${Object.entries(EXLIB.ex).map(([id, e]) => `${id}: ${e.n} | ${EXLIB.pat[e.p]} | ${e.eq}`).join('\n')}
 SESSION TEMPLATES (code: name): ${Object.entries(EXLIB.tpl).map(([k, v]) => `${k}: ${v.n}`).join('; ')}
@@ -187,18 +192,18 @@ async function chat(req, res) {
   let changed = false;
   try {
     for (let round = 0; round < 6; round++) {
-      const blocks = []; let cur = null; let stop = null;
+      const blocks = []; let stop = null;
       await anthropicStream({ model: CHAT_MODEL, max_tokens: 1200, stream: true, system, tools: TOOLS, messages }, ev => {
-        if (ev.type === 'content_block_start') { cur = ev.content_block.type === 'tool_use' ? { type: 'tool_use', id: ev.content_block.id, name: ev.content_block.name, json: '' } : { type: 'text', text: '' }; blocks.push(cur); }
-        else if (ev.type === 'content_block_delta') { if (ev.delta.type === 'text_delta') { cur.text += ev.delta.text; emit('text', { delta: ev.delta.text }); } else if (ev.delta.type === 'input_json_delta') cur.json += ev.delta.partial_json; }
+        if (ev.type === 'content_block_start') { blocks[ev.index] = ev.content_block.type === 'tool_use' ? { type: 'tool_use', id: ev.content_block.id, name: ev.content_block.name, json: '' } : { type: 'text', text: '' }; }
+        else if (ev.type === 'content_block_delta') { const cur = blocks[ev.index]; if (!cur) return; if (ev.delta.type === 'text_delta') { cur.text += ev.delta.text; emit('text', { delta: ev.delta.text }); } else if (ev.delta.type === 'input_json_delta') cur.json += ev.delta.partial_json; }
         else if (ev.type === 'message_delta') stop = ev.delta.stop_reason;
       });
-      const content = blocks.map(bk => bk.type === 'text' ? { type: 'text', text: bk.text } : { type: 'tool_use', id: bk.id, name: bk.name, input: bk.json ? JSON.parse(bk.json) : {} }).filter(bk => bk.type !== 'text' || bk.text);
+      const content = blocks.filter(Boolean).map(bk => { if (bk.type === 'text') return { type: 'text', text: bk.text }; let input = {}; try { input = bk.json ? JSON.parse(bk.json) : {}; } catch (e) { input = { _parse_error: bk.json.slice(0, 200) }; } return { type: 'tool_use', id: bk.id, name: bk.name, input }; }).filter(bk => bk.type !== 'text' || bk.text);
       if (content.length) messages.push({ role: 'assistant', content });
       const uses = content.filter(bk => bk.type === 'tool_use');
       if (stop !== 'tool_use' || !uses.length) break;
       const results = [];
-      for (const u of uses) { let out; try { out = runTool(u.name, u.input); } catch (e) { out = { error: String(e.message || e) }; } if (out && out.ok) changed = true; emit('tool', { name: u.name, input: u.input, ok: !!(out && out.ok) }); results.push({ type: 'tool_result', tool_use_id: u.id, content: JSON.stringify(out) }); }
+      for (const u of uses) { let out; try { out = u.input._parse_error ? { error: 'malformed tool input' } : runTool(u.name, u.input); } catch (e) { out = { error: String(e.message || e) }; } const isWrite = !/^get_/.test(u.name); if (out && out.ok) changed = true; emit('tool', { name: u.name, input: u.input, ok: !(out && out.error), write: isWrite }); results.push({ type: 'tool_result', tool_use_id: u.id, content: JSON.stringify(out).slice(0, 20000) }); }
       messages.push({ role: 'user', content: results });
       emit('text', { delta: '\n' });
     }

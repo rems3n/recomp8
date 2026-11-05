@@ -131,9 +131,9 @@ td{padding:8px;border-bottom:1px solid var(--line);vertical-align:middle}
 .conf.low{color:var(--bad)}.conf.medium{color:var(--warn)}.conf.high{color:var(--good)}
 .preview{width:100%;max-height:240px;object-fit:cover;border-radius:10px;border:1px solid var(--line)}
 /* coach chat: floating bubble + in-place panel */
-.fab{position:fixed;right:max(16px,env(safe-area-inset-right,0px));bottom:calc(var(--tab-h) + 14px + env(safe-area-inset-bottom,0px));width:54px;height:54px;border-radius:50%;background:var(--accent);color:var(--accent-ink);border:0;box-shadow:0 6px 18px rgba(0,0,0,.25);display:grid;place-items:center;cursor:pointer;z-index:15}
+.fab{position:fixed;right:max(16px,env(safe-area-inset-right,0px));bottom:calc(var(--tab-h) + 14px + env(safe-area-inset-bottom,0px));touch-action:none;user-select:none;-webkit-user-select:none;width:54px;height:54px;border-radius:50%;background:var(--accent);color:var(--accent-ink);border:0;box-shadow:0 6px 18px rgba(0,0,0,.25);display:grid;place-items:center;cursor:pointer;z-index:15}
 .fab svg{width:26px;height:26px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
-.fab[hidden]{display:none}
+.fab[hidden]{display:none}.fab.dragging{transition:none;opacity:.85;transform:scale(1.06)}
 .chatp{position:fixed;right:max(16px,env(safe-area-inset-right,0px));bottom:calc(var(--tab-h) + 14px + env(safe-area-inset-bottom,0px));width:min(420px,calc(100vw - 32px));height:min(640px,calc(100vh - var(--tab-h) - 40px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px)));background:var(--surface);color:var(--fg);border:1px solid var(--line);border-radius:16px;box-shadow:0 12px 40px rgba(0,0,0,.3);display:flex;flex-direction:column;z-index:16;overflow:hidden}
 .chatp[hidden]{display:none}
 .chatp .hd{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line);background:var(--surface2)}
@@ -307,7 +307,7 @@ const SLOTS=[['b','Breakfast'],['l','Lunch'],['s','Post-lift / snack'],['d','Din
 const WEEK_MEALS={1:['b1','l1','s1','d1','e1'],2:['b2','l3','s2','d3','e2'],3:['b4','l2','s3','d5','e1'],4:['b1','l4','s1','d2','e1'],5:['b3','l1','s2','d7','e2'],6:['b2','l6','s4','d4','e1'],0:['b5','l5','s3','d6','e0']};
 
 /* ================= STATE / STORAGE ================= */
-const S={db:null,uid:null,plan:{days:{}},logs:{},body:{},food:{},meals:{week:{}},settings:{kcal:2300,p:180,c:240,f:70,maint:2850,hack:false},strava:null,view:'today',day:null,calWeek:null,mode:'local',chart:null};
+const S={db:null,uid:null,plan:{days:{}},logs:{},body:{},food:{},meals:{week:{}},settings:{kcal:2300,p:180,c:240,f:70,maint:2850,hack:false,rest:60},strava:null,view:'today',day:null,calWeek:null,mode:'local',chart:null};
 const $=(s,r=document)=>r.querySelector(s); const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function ymd(d){const z=n=>String(n).padStart(2,'0');return d.getFullYear()+'-'+z(d.getMonth()+1)+'-'+z(d.getDate())}
 function pd(s){const [y,m,d]=s.split('-').map(Number);return new Date(y,m-1,d)}
@@ -508,6 +508,8 @@ function pickExercise(cur,cb){
 
 /* ================= TRAIN (logger) ================= */
 let timerIv=null;
+function restSec(){const r=+S.settings.rest;return r>=15&&r<=600?r:60}
+function fmtSec(x){return x>=60&&x%60===0?(x/60)+':00':x>=60?Math.floor(x/60)+':'+String(x%60).padStart(2,'0'):x+'s'}
 function vTrain(m){
   const d=S.day?clampDay(S.day):clampDay(today());S.day=d;
   const p=planDay(d),tp=TPL[p.tpl];let log=S.logs[d];
@@ -515,11 +517,12 @@ function vTrain(m){
     const old=log;log={date:d,tpl:p.tpl,done:old?.done||false,notes:old?.notes||'',ex:p.ex.map(e=>{const prev=old?.ex?.find(x=>x.id===e.id);return {id:e.id,target:e.sets+'×'+e.reps,sets:prev?prev.sets:Array.from({length:e.sets},()=>({w:'',r:'',done:false}))}})};
   }
   m.innerHTML=`<div class="stack" style="margin-bottom:12px">${dayNav(d,'train',`<button class="btn sm ghost" id="editD" style="margin-left:auto">Edit day</button>`)}
+   ${S.mode==='server'&&tp.k==='lift'?`<button class="btn" id="coachChange" style="align-self:flex-start"><svg viewBox="0 0 24 24" style="width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><path d="M21 12a8 8 0 0 1-8 8H8l-5 3 1.2-4.2A8 8 0 1 1 21 12z"/></svg> Change this workout with the coach</button>`:''}
    <div><div class="eyebrow">Week ${weekNo(d)} · ${esc(phase(weekNo(d)))}</div><h1>${esc(tp.n)} <span class="pill ${tp.k}">${tp.k}</span></h1><p class="small muted" style="margin:4px 0 0">${esc(tp.d)}</p></div></div>
    <div class="stack" id="exs"></div>
    <div class="card" style="margin-top:14px"><label class="f">Notes<textarea id="notes" rows="2">${esc(log.notes)}</textarea></label>
    <div class="stack" style="margin-top:10px"><button class="btn primary block" id="finish">${log.done?'Marked done ✓':'Finish & mark done'}</button>${log.done?'<button class="btn ghost" id="undone">Un-mark</button>':''}<span class="small muted" id="savedAt"></span></div></div>
-   <div class="restbar" id="restbar" hidden><span class="timer" id="timer">—</span><span class="small">rest</span><span style="flex:1"></span><button id="t90">90s</button><button id="t120">2:00</button><button id="tstop">✕</button></div>`;
+   <div class="restbar" id="restbar" hidden><span class="timer" id="timer">—</span><span class="small">rest</span><span style="flex:1"></span><button id="t1"></button><button id="t2"></button><button id="t3"></button><button id="tstop">✕</button></div>`;
   const exs=$('#exs');
   function draw(){exs.innerHTML=log.ex.length?log.ex.map((e,i)=>{const pl=p.ex[i];const pr=progression(pl,d);const sec=/^\d+\s*s\b/.test(String(pl.reps));return `<div class="ex" data-i="${i}"><div class="hd"><div style="min-width:0"><h3>${exName(e.id,'h3')}</h3><div class="small muted">Target <span class="num">${pl.sets}×${esc(pl.reps)}</span> · ${esc(EX[e.id].eq)}</div>${EX[e.id].cue?`<div class="small muted">${esc(EX[e.id].cue)}</div>`:''}${pr?`<div class="prev">${esc(pr.txt)}${pr.bump?` <span class="pill ok">+${pr.bump} lb today</span>`:''}</div>`:'<div class="prev">First time — leave 2 reps in the tank</div>'}</div><div class="stack" style="gap:6px"><button class="btn sm" data-sw="${i}">Swap</button>${exInfo(e.id)?`<button class="btn sm ghost" data-how="${e.id}">How to</button>`:''}</div></div>
     ${exInfo(e.id)?`<div class="thumbs" data-how="${e.id}" role="button" tabindex="0" aria-label="How to ${esc(EX[e.id].n)}">${exInfo(e.id).imgs.map(s=>`<img src="${s}" alt="" loading="lazy">`).join('')}</div>`:''}
@@ -527,17 +530,18 @@ function vTrain(m){
     ${e.sets.map((s,j)=>`<span class="num muted">${j+1}</span><input type="number" step="2.5" inputmode="decimal" value="${esc(s.w)}" placeholder="${pr&&pr.w?pr.w+(pr.bump||0):'—'}" data-i="${i}" data-j="${j}" data-k="w" aria-label="weight"><input type="number" inputmode="numeric" value="${esc(s.r)}" placeholder="${esc(String(pl.reps).match(/\d+/)?.[0]||'')}" data-i="${i}" data-j="${j}" data-k="r" aria-label="reps"><button class="chk ${s.done?'on':''}" data-i="${i}" data-j="${j}" aria-label="set done">✓</button>`).join('')}</div>
     <div class="row" style="margin-top:8px"><button class="btn sm ghost" data-add="${i}">+ add set</button></div></div>`}).join(''):`<div class="card"><p>No sets to log for this session. ${tp.k==='cardio'?'Do the cardio, then mark it done below.':'Enjoy the walk.'}</p></div>`;
     exs.querySelectorAll('input').forEach(inp=>inp.onchange=()=>{log.ex[+inp.dataset.i].sets[+inp.dataset.j][inp.dataset.k]=inp.value;persist()});
-    exs.querySelectorAll('.chk').forEach(b=>b.onclick=()=>{const s=log.ex[+b.dataset.i].sets[+b.dataset.j];const inps=exs.querySelectorAll(`input[data-i="${b.dataset.i}"][data-j="${b.dataset.j}"]`);if(!s.done){s.w=inps[0].value||(inps[0].placeholder!=='—'?inps[0].placeholder:'');s.r=inps[1].value||inps[1].placeholder}s.done=!s.done;persist();draw();if(s.done)startTimer(90)});
+    exs.querySelectorAll('.chk').forEach(b=>b.onclick=()=>{const s=log.ex[+b.dataset.i].sets[+b.dataset.j];const inps=exs.querySelectorAll(`input[data-i="${b.dataset.i}"][data-j="${b.dataset.j}"]`);if(!s.done){s.w=inps[0].value||(inps[0].placeholder!=='—'?inps[0].placeholder:'');s.r=inps[1].value||inps[1].placeholder}s.done=!s.done;persist();draw();if(s.done)startTimer(restSec())});
     exs.querySelectorAll('[data-add]').forEach(b=>b.onclick=()=>{log.ex[+b.dataset.add].sets.push({w:'',r:'',done:false});persist();draw()});
     exs.querySelectorAll('[data-how]').forEach(b=>b.onclick=()=>howTo(b.dataset.how));
     exs.querySelectorAll('[data-sw]').forEach(b=>b.onclick=()=>swapExercise(p.ex[+b.dataset.sw],async e=>{if(!S.plan.days[d])S.plan.days[d]={tpl:p.tpl,ex:p.ex};S.plan.days[d].ex[+b.dataset.sw]=e;await save('plan','days',S.plan);render()}));
   }
   let pt=null;function persist(){clearTimeout(pt);pt=setTimeout(async()=>{log.notes=$('#notes').value;await save('logs',d,log);const s=$('#savedAt');if(s)s.textContent='saved'},400)}
   draw();wireDayNav(d,'train');$('#editD').onclick=()=>editDay(d);
+  const cc=$('#coachChange');if(cc)cc.onclick=()=>{chatOpen();$('#chatIn').value='Rebuild today\'s workout based on what I did and missed this past week. ';$('#chatIn').focus();$('#chatIn').setSelectionRange(999,999)};
   $('#notes').onchange=persist;
   $('#finish').onclick=async()=>{log.done=true;log.notes=$('#notes').value;await save('logs',d,log);toast(tp.k==='lift'?'Session logged':'Marked done');render()};
   const un=$('#undone');if(un)un.onclick=async()=>{log.done=false;await save('logs',d,log);render()};
-  $('#t90').onclick=()=>startTimer(90);$('#t120').onclick=()=>startTimer(120);$('#tstop').onclick=()=>{clearInterval(timerIv);$('#restbar').hidden=true};
+  const rs=restSec();const opts=[rs,rs+30,rs+60];['t1','t2','t3'].forEach((id,i)=>{const b=$('#'+id);b.textContent=fmtSec(opts[i]);b.onclick=()=>startTimer(opts[i])});$('#tstop').onclick=()=>{clearInterval(timerIv);$('#restbar').hidden=true};
 }
 function startTimer(sec){clearInterval(timerIv);const bar=$('#restbar'),t=$('#timer');if(!t)return;bar.hidden=false;let left=sec;const tick=()=>{if(!document.body.contains(t)){clearInterval(timerIv);return}t.textContent=Math.floor(left/60)+':'+String(left%60).padStart(2,'0');if(left<=0){clearInterval(timerIv);t.textContent='GO';if(navigator.vibrate)navigator.vibrate(200)}left--};tick();timerIv=setInterval(tick,1000)}
 
@@ -731,6 +735,7 @@ function vSettings(m){
    <div class="card"><h2>Daily targets</h2><form id="sf" class="stack" style="margin-top:8px">
     <div class="row nowrap"><label class="f">Calories<input type="number" id="sk" value="${g.kcal}" inputmode="numeric"></label><label class="f">Protein<input type="number" id="sp" value="${g.p}" inputmode="numeric"></label></div><div class="row nowrap"><label class="f">Carbs<input type="number" id="sc" value="${g.c}" inputmode="numeric"></label><label class="f">Fat<input type="number" id="sff" value="${g.f}" inputmode="numeric"></label></div>
     <label class="f">Estimated maintenance (kcal)<input type="number" id="sm" value="${g.maint}" inputmode="numeric"></label>
+    <label class="f">Rest timer (seconds, starts when you tick a set)<input type="number" id="srest" value="${g.rest||60}" min="15" max="600" step="15" inputmode="numeric"></label>
     <button class="btn primary block">Save targets</button><button type="button" class="btn ghost" id="preset">Reset to plan defaults (2,300 / 180 / 240 / 70)</button></form>
     <p class="small muted" style="margin-top:10px">Current macros add to ${g.p*4+g.c*4+g.f*9} kcal. Eat at ~${g.maint} kcal through Nov 5 (marathon recovery), then ${g.kcal}.</p>
    </div>
@@ -751,8 +756,8 @@ function vSettings(m){
    <div class="card"><h2>Data</h2><p class="small muted">Storage: <b>${S.mode}</b>. ${S.mode==='cloud'?'Logs sync across your devices through this page\'s database.':'Saving to this browser only; open from claude.ai signed in to sync.'}</p>
     <div class="row"><button class="btn" id="exp2" style="flex:1">Export everything (CSV)</button><button class="btn ghost" id="wipe">Reset plan edits</button></div></div>
   </div>`;
-  $('#sf').onsubmit=async e=>{e.preventDefault();await save('settings','main',{...g,kcal:+$('#sk').value,p:+$('#sp').value,c:+$('#sc').value,f:+$('#sff').value,maint:+$('#sm').value});toast('Saved');render()};
-  $('#preset').onclick=async()=>{await save('settings','main',{...g,kcal:2300,p:180,c:240,f:70,maint:2850});render()};
+  $('#sf').onsubmit=async e=>{e.preventDefault();await save('settings','main',{...g,kcal:+$('#sk').value,p:+$('#sp').value,c:+$('#sc').value,f:+$('#sff').value,maint:+$('#sm').value,rest:Math.max(15,Math.min(600,+$('#srest').value||60))});toast('Saved');render()};
+  $('#preset').onclick=async()=>{await save('settings','main',{...g,kcal:2300,p:180,c:240,f:70,maint:2850,rest:60});render()};
   $('#hack').onchange=async e=>{await save('settings','main',{...S.settings,hack:e.target.checked})};
   $('#exp2').onclick=exportCSV;
   $('#wipe').onclick=()=>{const ov=modal('<h2>Reset plan edits?</h2><p class="small muted">Day changes and meal swaps go back to the default plan. Logs and weigh-ins stay.</p><div class="row"><button class="btn primary" id="ok" style="flex:1">Reset</button><button class="btn ghost" id="x">Cancel</button></div>');$('#x',ov).onclick=()=>ov.remove();$('#ok',ov).onclick=async()=>{await save('plan','days',{days:{}});await save('plan','meals',{week:{}});ov.remove();render()}};
@@ -775,7 +780,7 @@ function chatLoad(){CHAT.msgs=lsGet('chat')||[]}
 function chatSave(){lsSet('chat',CHAT.msgs.slice(-40))}
 function md(t){let h=esc(t);h=h.replace(/\*\*(.+?)\*\*/g,'<b>$1</b>');h=h.replace(/^(?:[-•] )(.*)$/gm,'<li>$1</li>').replace(/(<li>.*<\/li>\n?)+/g,m=>'<ul>'+m.replace(/\n/g,'')+'</ul>');return h}
 function chatRender(){const box=$('#msgs');box.innerHTML=CHAT.msgs.map(m=>m.role==='user'?`<div class="msg u">${esc(m.content)}</div>`:m.role==='tool'?`<div class="msg t ${m.ok?'ok':''}">${esc(m.content)}</div>`:`<div class="msg a">${md(m.content)}</div>`).join('')+(CHAT.busy&&!CHAT.streaming?'<div class="msg a"><span class="typing"></span></div>':'');box.scrollTop=box.scrollHeight}
-function chatSuggestions(){const v=S.view;const list=v==='train'?['I only have 30 min — shorten today but hit every main muscle group','Swap anything that needs a bench; they\'re all taken','What weight should I start with on the first lift?']:v==='eat'?['What should I eat tonight to land 180 g protein?','Swap tomorrow\'s lunch for something I can buy near the office','How many calories do I have left today?']:v==='body'?['How is my weight trend vs the plan?','Should I change my calories this week?']:v==='calendar'?['Move this week\'s cardio to Saturday','I\'m traveling Thu–Sun, rework the week']:['What\'s my plan today and why?','I only have 30 min today — adjust the workout','Did I hit protein yesterday?'];$('#sug').innerHTML=list.map(s=>`<button type="button">${esc(s)}</button>`).join('');$('#sug').querySelectorAll('button').forEach(b=>b.onclick=()=>{$('#chatIn').value=b.textContent;chatSend()})}
+function chatSuggestions(){const v=S.view;const list=v==='train'?['Rebuild today based on what I did and missed this week','I only have 30 min — shorten today but hit every main muscle group','Swap anything that needs a bench; they\'re all taken','What weight should I start with on the first lift?']:v==='eat'?['What should I eat tonight to land 180 g protein?','Swap tomorrow\'s lunch for something I can buy near the office','How many calories do I have left today?']:v==='body'?['How is my weight trend vs the plan?','Should I change my calories this week?']:v==='calendar'?['Move this week\'s cardio to Saturday','I\'m traveling Thu–Sun, rework the week']:['What\'s my plan today and why?','I only have 30 min today — adjust the workout','Did I hit protein yesterday?'];$('#sug').innerHTML=list.map(s=>`<button type="button">${esc(s)}</button>`).join('');$('#sug').querySelectorAll('button').forEach(b=>b.onclick=()=>{$('#chatIn').value=b.textContent;chatSend()})}
 function chatOpen(){$('#chatp').hidden=false;$('#fab').hidden=true;document.body.classList.add('chat-open');chatSuggestions();chatRender();setTimeout(()=>$('#chatIn').focus(),50)}
 function chatMax(on){const p=$('#chatp');const v=on===undefined?!p.classList.contains('max'):on;p.classList.toggle('max',v);document.body.classList.toggle('chat-max',v);$('#chatMax').setAttribute('aria-label',v?'Shrink chat':'Expand chat');$('#msgs').scrollTop=$('#msgs').scrollHeight}
 function chatClose(){$('#chatp').hidden=true;$('#fab').hidden=S.mode!=='server';document.body.classList.remove('chat-open','chat-max')}
@@ -797,7 +802,16 @@ async function chatSend(){const ta=$('#chatIn');const text=ta.value.trim();if(!t
   CHAT.busy=false;CHAT.streaming=false;chatSave();chatRender();$('#chatSend').disabled=false;
   if(changed){try{await loadAll();if(S.meals.custom)Object.assign(MEALS,S.meals.custom);render();toast('Updated')}catch(e){}}
 }
-$('#fab').onclick=chatOpen;$('#chatClose').onclick=chatClose;$('#chatMax').onclick=()=>chatMax();
+(()=>{const f=$('#fab');let drag=null,moved=false;
+  const place=(x,y)=>{const w=f.offsetWidth||54,h=f.offsetHeight||54;const maxX=window.innerWidth-w-8,maxY=window.innerHeight-h-8;x=Math.max(8,Math.min(maxX,x));y=Math.max(8,Math.min(maxY,y));f.style.left=x+'px';f.style.top=y+'px';f.style.right='auto';f.style.bottom='auto';return [x,y]};
+  const saved=lsGet('fabpos');if(saved&&saved.length===2)requestAnimationFrame(()=>place(saved[0],saved[1]));
+  f.addEventListener('pointerdown',e=>{drag={dx:e.clientX-f.getBoundingClientRect().left,dy:e.clientY-f.getBoundingClientRect().top,x0:e.clientX,y0:e.clientY};moved=false;f.setPointerCapture(e.pointerId)});
+  f.addEventListener('pointermove',e=>{if(!drag)return;if(!moved&&Math.hypot(e.clientX-drag.x0,e.clientY-drag.y0)<6)return;moved=true;f.classList.add('dragging');place(e.clientX-drag.dx,e.clientY-drag.dy)});
+  const end=e=>{if(!drag)return;f.classList.remove('dragging');if(moved){const r=f.getBoundingClientRect();lsSet('fabpos',place(r.left,r.top))}else chatOpen();drag=null};
+  f.addEventListener('pointerup',end);f.addEventListener('pointercancel',end);
+  window.addEventListener('resize',()=>{const s=lsGet('fabpos');if(s)place(s[0],s[1])});
+})();
+$('#chatClose').onclick=chatClose;$('#chatMax').onclick=()=>chatMax();
 (()=>{let y0=null;const hd=$('#chatp .hd');hd.addEventListener('touchstart',e=>{if(e.target.closest('button'))return;y0=e.touches[0].clientY},{passive:true});hd.addEventListener('touchend',e=>{if(y0===null)return;const dy=e.changedTouches[0].clientY-y0;y0=null;if(dy<-40)chatMax(true);else if(dy>40){if($('#chatp').classList.contains('max'))chatMax(false);else chatClose()}},{passive:true})})();
 $('#chatClear').onclick=()=>{CHAT.msgs=[];chatSave();chatRender()};
 $('#chatForm').onsubmit=e=>{e.preventDefault();chatSend()};
