@@ -97,7 +97,7 @@ td{padding:8px;border-bottom:1px solid var(--line);vertical-align:middle}
 @media(min-width:640px){.md{border-radius:12px}.md::before{display:none}}
 .opt{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);cursor:pointer;text-align:left;font:inherit;color:var(--fg);width:100%;min-height:52px}
 .opt:active{background:var(--surface2)}.opt .k{font-family:var(--mono);font-size:12px;color:var(--muted);white-space:nowrap}
-.tag{font-size:10px;padding:1px 6px;border-radius:4px;background:var(--surface2);color:var(--muted);text-transform:uppercase;letter-spacing:.06em}.tag.s{color:var(--warn)}.tag.m{color:var(--cardio)}
+.tag{font-size:10px;padding:1px 6px;border-radius:4px;background:var(--surface2);color:var(--muted);text-transform:uppercase;letter-spacing:.06em}.tag.s{color:var(--warn)}.tag.h{color:var(--good)}.tag.m{color:var(--cardio)}
 .kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px}
 .kpi div{background:var(--surface2);border-radius:10px;padding:10px}.kpi b{display:block;font-family:var(--mono);font-size:22px;font-weight:500}.kpi span{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
 .check{display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px}
@@ -253,7 +253,14 @@ cablecrunch:{n:'Cable crunch (rope)',p:'core',eq:'Cable',pf:'y',cue:'Kneel, crun
 kneeraise:{n:'Hanging knee raise',p:'core',eq:'Captain\'s chair',pf:'y',cue:'Curl the pelvis, don\'t swing.'},
 plank:{n:'Plank',p:'core',eq:'Bodyweight',pf:'y',cue:'Squeeze glutes, ribs down.'},
 copen:{n:'Copenhagen plank',p:'core',eq:'Bench',pf:'y',cue:'Top foot on bench, lift hips. Adductor + IT band work.'},
-abwheel:{n:'Ab wheel rollout',p:'core',eq:'Ab wheel',pf:'s',cue:'Bring your own wheel; use the cable crunch otherwise.'}
+abwheel:{n:'Ab wheel rollout',p:'core',eq:'Ab wheel',pf:'s',cue:'Bring your own wheel; use the cable crunch otherwise.'},
+kbswing:{n:'Kettlebell swing (two-hand)',p:'hinge',eq:'Kettlebell',pf:'h',cue:'Hinge, don\'t squat. Snap the hips; the bell floats to chest height, arms stay loose.'},
+kbtgu:{n:'Turkish get-up',p:'core',eq:'Kettlebell',pf:'h',cue:'Eyes on the bell, elbow locked, slow on the way up and the way down.'},
+kbcp:{n:'Kettlebell clean & press',p:'vpush',eq:'Kettlebell',pf:'h',cue:'Clean to the rack, brace, press with a vertical forearm. Reset the clean every rep.'},
+kbfsq:{n:'Kettlebell front squat (rack)',p:'squat',eq:'Kettlebell',pf:'h',cue:'Bell in the rack, elbow tucked, sit between the heels, chest tall.'},
+kbcarry:{n:'Suitcase / farmer carry',p:'core',eq:'Kettlebell',pf:'h',cue:'Tall, ribs down, shoulders level. Suitcase = one bell, don\'t lean away from it.'},
+kbrow:{n:'One-arm kettlebell row',p:'hpull',eq:'Kettlebell',pf:'h',cue:'Hand on knee or bench, pull to the hip, pause.'},
+kbhalo:{n:'Kettlebell halo',p:'core',eq:'Kettlebell',pf:'h',cue:'Bell upside-down by the horns, circle the head, ribs down.'}
 };
 const TPL={
 FB:{n:'Full Body (recovery week)',k:'lift',d:'Light loads: you could do 5 more reps on every set.',ex:[['goblet',3,'10'],['dbbench',3,'10'],['cbrow',3,'10'],['dbrdl',3,'10'],['sideab',2,'15'],['plank',3,'30s']]},
@@ -261,6 +268,11 @@ LA:{n:'Lower A',k:'lift',d:'Squat focus. Rest 2 min on the first lift, 60–90 s
 UA:{n:'Upper A',k:'lift',d:'Press focus.',ex:[['dbbench',3,'6-8'],['cbrow',3,'8-10'],['incdb',3,'10-12'],['latraise',3,'12-15'],['pushdown',3,'12-15'],['kneeraise',3,'10']]},
 LB:{n:'Lower B',k:'lift',d:'Hinge + hip focus. IT band work built in.',ex:[['dbdl',3,'6-8'],['bss',3,'8-10'],['smhip',3,'10-12'],['legcurl',3,'12'],['abdm',3,'15'],['copen',3,'20s']]},
 UB:{n:'Upper B',k:'lift',d:'Pull focus.',ex:[['dbohp',3,'6-8'],['latpd',3,'8-10'],['cablerow',3,'10-12'],['inccurl',3,'12'],['facepull',3,'15'],['cablecrunch',3,'12']]},
+FBA:{n:'Full Body A',k:'lift',d:'Squat + press focus. 60 min cap: rest 2 min on the first two lifts, 75–90 s after. Only two gym lifts a week, so every set has to progress.',ex:[['smsquat',3,'6-8'],['dbbench',3,'6-8'],['cbrow',3,'8-10'],['dbrdl',3,'8-10'],['dbohp',2,'8-10'],['abdm',2,'15']]},
+FBB:{n:'Full Body B',k:'lift',d:'Hinge + pull focus. 60 min cap: rest 2 min on the first two lifts, 75–90 s after. IT band work built in.',ex:[['dbdl',3,'6-8'],['latpd',3,'8-10'],['bss',3,'8-10'],['incdb',3,'8-10'],['legcurl',2,'12'],['facepull',2,'15'],['copen',2,'20s']]},
+KB:{n:'Kettlebell strength',k:'lift',d:'Functional strength, not a circuit: heavy bell, full rest (90 s+), slow get-ups, crisp swings. Progress reps first, then bell size (16 → 20 → 24 kg). No kettlebells at Planet Fitness: do this at home, or swap each move for its dumbbell version in the same slot.',ex:[['kbtgu',3,'2 each'],['kbswing',6,'12'],['kbcp',4,'4 each'],['kbfsq',3,'6-8'],['kbcarry',3,'40 m each']]},
+VO2:{n:'VO2max intervals (bike / row / run)',k:'cardio',d:'10 min easy, then 4 × 4 min hard (a word or two of speech at most) / 3 min easy, 5 min cool-down. ~40 min. Bike or row through November to keep the IT band quiet; run once the knee has been silent for two weeks.',ex:[]},
+Z2:{n:'Zone 2 long run or bike 60–90 min',k:'cardio',d:'Conversational the whole way (~70–75% max HR; run slower than 10:30/mi). Bike is the lower-impact pick while the marathon leaves the legs. Any lateral knee pain: stop the run, finish on the bike.',ex:[]},
 DLL:{n:'Deload Lower',k:'lift',d:'Same lifts, 2 sets, 10% lighter.',ex:[['smsquat',2,'6-8'],['dbrdl',2,'8-10'],['bss',2,'8-10'],['abdm',2,'15'],['pallof',2,'12']]},
 DLU:{n:'Deload Upper',k:'lift',d:'Same lifts, 2 sets, 10% lighter.',ex:[['dbbench',2,'6-8'],['latpd',2,'8-10'],['dbohp',2,'6-8'],['cablerow',2,'10-12'],['facepull',2,'15']]},
 TEST:{n:'Re-test day',k:'lift',d:'Work up to a top set of 6 on each. Log it; compare with week 2.',ex:[['smsquat',1,'6'],['dbbench',1,'6'],['dbdl',1,'6'],['latpd',1,'6'],['dbohp',1,'6']]},
@@ -270,8 +282,9 @@ SPIN:{n:'Easy spin or swim 30 min',k:'cardio',d:'Optional. Flush the marathon ou
 WALK:{n:'Walk 60 min',k:'rest',d:'Or 10,000 steps across the day.',ex:[]},
 REST:{n:'Rest',k:'rest',d:'Holidays are for walking.',ex:[]}
 };
-const WEEK_PLAN={1:['FB','WALK','FB','WALK','FB','SPIN','WALK'],8:['DLL','DLU','TEST','WALK','REST','WALK','REST'],def:['LA','UA','RUN','LB','UB','BIKE','WALK']};
-const PHASES=[[1,'Recover + learn the lifts'],[2,'Find working weights'],[3,'Progressive overload'],[7,'Peak loads'],[8,'Deload + re-test'],[9,'Carry on']];
+/* Mon→Sun. Weeks 2–5 = Block 1 (5-day split: 2 full-body lifts, 1 kettlebell day, 1 Zone 2 long, 1 VO2max). Week 2 keeps the hard cardio easy while the marathon clears. */
+const WEEK_PLAN={1:['FB','WALK','FB','WALK','FB','SPIN','WALK'],2:['FBA','RUN','KB','FBB','WALK','Z2','WALK'],8:['DLL','DLU','TEST','WALK','REST','WALK','REST'],def:['FBA','VO2','KB','FBB','WALK','Z2','WALK']};
+const PHASES=[[1,'Recover + learn the lifts'],[2,'Block 1 · find working weights'],[3,'Block 1 · progressive overload'],[6,'Block 2 · reassess after 4 weeks'],[7,'Peak loads'],[8,'Deload + re-test'],[9,'Carry on']];
 const MEALS={
 b1:{s:'b',n:'Eggs, egg whites, oats + berries',k:550,p:45,c:55,f:16,i:['eggs x3','egg whites 1 cup','oats 1/2 cup','berries 1 cup']},
 b2:{s:'b',n:'Greek yogurt bowl (granola, chia, berries)',k:480,p:42,c:58,f:10,i:['nonfat Greek yogurt 1.5 cups','berries 1 cup','granola 1/4 cup','chia 1 tbsp']},
@@ -386,7 +399,7 @@ function bodyRows(){return Object.values(S.body).sort((a,b)=>a.date<b.date?-1:1)
 function avg7(upto){const rows=bodyRows().filter(r=>r.date<=upto).slice(-7);if(!rows.length)return null;return rows.reduce((a,r)=>a+r.w,0)/rows.length}
 function macroBars(s){const t=macros(s),g=S.settings;const row=(l,v,goal,u)=>`<div class="macro"><span>${l}</span><div class="bar ${v>goal*1.08?'over':''}"><i style="width:${Math.min(100,v/goal*100)}%"></i></div><span class="num small">${Math.round(v)} / ${goal}${u}</span></div>`;
   return row('Calories',t.k,g.kcal,'')+row('Protein',t.p,g.p,' g')+row('Carbs',t.c,g.c,' g')+row('Fat',t.f,g.f,' g')}
-function pfTag(k){return `<span class="tag ${EX[k].pf}">${EX[k].pf==='y'?'every PF':EX[k].pf==='m'?'most PF':'some PF'}</span>`}
+function pfTag(k){const f=EX[k].pf;return `<span class="tag ${f}">${f==='y'?'every PF':f==='m'?'most PF':f==='h'?'home / KB':'some PF'}</span>`}
 /* exercise photos + step-by-step (free-exercise-db, public domain) — available when self-hosted */
 function exInfo(id){return S.exinfo&&S.exinfo[id]}
 function exName(id,cls){return `<button class="exname ${cls||''}" data-how="${id}" type="button">${esc(EX[id].n)}${exInfo(id)?' <span class="qm">?</span>':''}</button>`}
@@ -748,11 +761,13 @@ function vSettings(m){
    <div class="card"><h2>The 8-week plan</h2>
     <div class="tbl"><table><tr><th>Wk</th><th>Dates</th><th>Focus</th><th>Lifting</th><th>Cardio</th></tr>
      <tr><td>1</td><td>Nov 2–8</td><td>Recover, learn the lifts</td><td>3 full-body, light</td><td>Walks; 1 easy spin</td></tr>
-     <tr><td>2</td><td>Nov 9–15</td><td>Find working weights</td><td>4 (upper/lower), 2 RIR</td><td>Easy run + easy bike</td></tr>
-     <tr><td>3–6</td><td>Nov 16–Dec 13</td><td>Progressive overload</td><td>4; +5/+10 lb when all sets hit the top of the range</td><td>Easy run + bike intervals</td></tr>
-     <tr><td>7</td><td>Dec 14–20</td><td>Peak loads</td><td>4, first set to 1 RIR</td><td>Same</td></tr>
+     <tr><td>2</td><td>Nov 9–15</td><td>Block 1 · find working weights</td><td>Full Body A + B (60 min cap, 2 RIR) + kettlebell day</td><td>Easy run Tue, Zone 2 long Sat</td></tr>
+     <tr><td>3–5</td><td>Nov 16–Dec 6</td><td>Block 1 · progressive overload</td><td>A + B; +5/+10 lb when all sets hit the top of the range. KB: add reps, then bell size</td><td>VO2max 4×4 Tue, Zone 2 long Sat</td></tr>
+     <tr><td>6</td><td>Dec 7–13</td><td>Block 2 · reassess</td><td>Same split until re-planned at the 4-week mark</td><td>Same</td></tr>
+     <tr><td>7</td><td>Dec 14–20</td><td>Peak loads</td><td>A + B, first set to 1 RIR; KB heavy</td><td>Same</td></tr>
      <tr><td>8</td><td>Dec 21–27</td><td>Deload + re-test</td><td>2 light + re-test Wed 23rd; Christmas off</td><td>Walks only</td></tr>
-     <tr><td>9</td><td>Dec 28–31</td><td>Carry on</td><td>Upper/lower</td><td>Easy run</td></tr></table></div>
+     <tr><td>9</td><td>Dec 28–31</td><td>Carry on</td><td>Full body A + B</td><td>Easy run</td></tr></table></div>
+    <p class="small muted">Weekly rhythm (Mon→Sun): Full Body A · VO2max · Kettlebell · Full Body B · walk · Zone 2 long · walk. Keep the kettlebell day off the day before a lift, and keep Zone 2 truly easy — the VO2 and KB days are all the intensity you need.</p>
     <p class="small muted">Progression: when every set reaches the top of its rep range, the logger suggests +5 lb (upper) / +10 lb (lower) next time. Miss the bottom of the range two sessions running → drop 10% and rebuild.</p>
    </div>
    <div class="card"><h2>Data</h2><p class="small muted">Storage: <b>${S.mode}</b>. ${S.mode==='cloud'?'Logs sync across your devices through this page\'s database.':'Saving to this browser only; open from claude.ai signed in to sync.'}</p>
