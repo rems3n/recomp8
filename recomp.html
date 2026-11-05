@@ -464,6 +464,7 @@ function vCalendar(m){
 function editDay(d){
   const p=planDay(d);const tp=TPL[p.tpl];
   const ov=modal(`<div class="row between nowrap"><div><div class="eyebrow">${esc(fmtD(d))} · Week ${weekNo(d)}</div><h2>${esc(tp.n)}</h2></div><button class="btn sm" id="x">Close</button></div>
+   ${S.mode==='server'?`<form id="coachAsk" class="stack" style="margin-top:12px;padding:10px;border-radius:10px;background:var(--surface2)"><div class="eyebrow">Tell the coach what you want</div><textarea id="coachTxt" rows="2" placeholder="e.g. make this a 40-min upper session, no bench; or: swap this with Saturday"></textarea><div class="row nowrap"><button class="btn primary" style="flex:1">Ask the coach to change it</button></div><p class="small muted" style="margin:0">It knows what you did and missed this week.</p></form><div class="eyebrow" style="margin-top:14px">Or edit by hand</div>`:''}
    <div class="stack" style="margin-top:12px">
     <label class="f">Session type<select id="tplSel">${Object.entries(TPL).map(([k,v])=>`<option value="${k}" ${k===p.tpl?'selected':''}>${esc(v.n)}</option>`).join('')}</select></label>
     <label class="f">Swap this day with<select id="swapSel"><option value="">— pick a date —</option>${allDates().filter(x=>x!==d).map(x=>`<option value="${x}">${esc(fmtD(x))} · ${esc(TPL[planDay(x).tpl].n)}</option>`).join('')}</select></label>
@@ -486,6 +487,7 @@ function editDay(d){
   $('#swapSel',ov).onchange=async e=>{const o=e.target.value;if(!o)return;const a=planDay(d),b=planDay(o);S.plan.days[d]=b;S.plan.days[o]=a;await save('plan','days',S.plan);ov.remove();toast('Swapped '+d.slice(5)+' ↔ '+o.slice(5));render()};
   $('#openLog',ov).onclick=()=>{ov.remove();go('train',d)};
   $('#x',ov).onclick=()=>ov.remove();
+  const ca=$('#coachAsk',ov);if(ca){setTimeout(()=>$('#coachTxt',ov).focus(),80);ca.onsubmit=e=>{e.preventDefault();const t=$('#coachTxt',ov).value.trim();if(!t)return;ov.remove();S.day=d;chatOpen();$('#chatIn').value=(d===today()?'For today':'For '+fmtD(d))+': '+t;chatSend()}}
 }
 function swapExercise(cur,cb){
   const e=EX[cur.id];const alts=Object.keys(EX).filter(k=>k!==cur.id&&EX[k].p===e.p).sort((a,b)=>(EX[a].pf>EX[b].pf?1:-1));
