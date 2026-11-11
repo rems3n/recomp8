@@ -99,7 +99,7 @@ td{padding:8px;border-bottom:1px solid var(--line);vertical-align:middle}
 .opt:active{background:var(--surface2)}.opt .k{font-family:var(--mono);font-size:12px;color:var(--muted);white-space:nowrap}
 .tag{font-size:10px;padding:1px 6px;border-radius:4px;background:var(--surface2);color:var(--muted);text-transform:uppercase;letter-spacing:.06em}.tag.s{color:var(--warn)}.tag.h{color:var(--good)}.tag.m{color:var(--cardio)}
 .kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px}
-.kpi div{background:var(--surface2);border-radius:10px;padding:10px}.kpi b{display:block;font-family:var(--mono);font-size:22px;font-weight:500}.kpi span{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.kpi div{background:var(--surface2);border-radius:10px;padding:10px}.kpi b{display:block;font-family:var(--mono);font-size:clamp(17px,5vw,22px);font-weight:500}.kpi span{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
 .check{display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px}
 .check .dot{width:20px;height:20px;border-radius:50%;border:2px solid var(--line);display:grid;place-items:center;font-size:11px;flex:none}
 .check.on .dot{background:var(--good);border-color:var(--good);color:#fff}
@@ -114,6 +114,13 @@ td{padding:8px;border-bottom:1px solid var(--line);vertical-align:middle}
 .exname.h3{font-family:var(--display);font-weight:700;font-size:18px;line-height:1.05}
 .qm{display:inline-grid;place-items:center;width:16px;height:16px;border-radius:50%;background:var(--accent);color:var(--accent-ink);font:700 11px var(--body);vertical-align:middle;margin-left:2px}
 .thumbs{display:flex;gap:6px;margin-top:8px}
+.grip{touch-action:none;user-select:none;-webkit-user-select:none;cursor:grab;background:none;border:0;color:var(--muted);width:30px;min-height:40px;display:grid;place-items:center;flex:none;padding:0;margin-left:-6px}
+.grip svg{width:18px;height:18px;fill:currentColor}
+.dragging{position:relative;z-index:6;box-shadow:0 10px 28px rgba(0,0,0,.28);background:var(--surface);opacity:.96}
+.ex.dragging,.xrow.dragging{border-radius:10px}
+.mealbtn{background:none;border:0;padding:0;margin:0;font:inherit;color:inherit;text-align:left;cursor:pointer;width:100%;min-width:0}
+.mealbtn .chev{color:var(--muted);font-size:13px}
+.itembtn{background:none;border:0;padding:0;font:inherit;color:inherit;text-align:left;cursor:pointer;text-decoration:underline;text-decoration-color:var(--line);text-underline-offset:3px}
 .thumbs img{height:84px;width:auto;border-radius:8px;border:1px solid var(--line);background:#fff;object-fit:cover}
 .thumb{width:56px;height:56px;border-radius:8px;border:1px solid var(--line);background:#fff;object-fit:cover;flex:none}
 .howto img{width:100%;border-radius:10px;border:1px solid var(--line);background:#fff}
@@ -352,8 +359,17 @@ async function remove(coll,id){
   if(coll==='logs')delete S.logs[id];if(coll==='body')delete S.body[id];if(coll==='food')delete S.food[id];
   if(S.db){try{await S.db.doc(coll+'/'+id).delete()}catch(e){}}else if(S.mode==='server'){try{await api('DELETE','/'+coll+'/'+id)}catch(e){}}else{try{localStorage.removeItem('rc8:'+coll+'/'+id)}catch(e){}}
 }
+/* push anything that only made it to this device's storage (e.g. after a failed sync) up to the server; food merges, other docs only fill gaps */
+async function syncPending(){
+  const keys=[];try{for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(/^rc8:(logs|body|food|plan|settings)\/.+$/.test(k))keys.push(k)}}catch(e){return 0}
+  let n=0;for(const k of keys){const [coll,id]=k.slice(4).split('/');const local=lsGet(coll+'/'+id);if(!local){continue}
+    let remote=null;try{remote=await api('GET','/'+coll+'/'+id)}catch(e){if(e.code!=='http_404')continue}
+    let out=local;if(remote){if(coll!=='food'){try{localStorage.removeItem(k)}catch(e){}continue}
+      const seen=new Set((remote.items||[]).map(i=>[i.n,i.k,i.slot||''].join('|')));out={date:id,items:[...(remote.items||[]),...(local.items||[]).filter(i=>!seen.has([i.n,i.k,i.slot||''].join('|')))]}}
+    try{await api('PUT','/'+coll+'/'+id,out);localStorage.removeItem(k);n++}catch(e){}}
+  return n}
 async function loadAll(){
-  if(S.mode==='server'){
+  if(S.mode==='server'){try{const n=await syncPending();if(n)setTimeout(()=>toast('Synced '+n+' saved-on-phone '+(n>1?'entries':'entry')),800)}catch(e){}
     const all=await api('GET','/all');S.logs=all.logs||{};S.body=all.body||{};S.food=all.food||{};if(all.plan?.days)S.plan=all.plan.days;if(all.plan?.meals)S.meals=all.plan.meals;if(all.settings?.main)S.settings={...S.settings,...all.settings.main};
   }else if(S.db){
     for(const c of ['logs','body','food']){const q=await S.db.collection(c).get();const m={};q.docs.forEach(d=>{if(d.exists)m[d.id]=d.data()});S[c]=m;}
@@ -410,6 +426,22 @@ function howTo(id){const i=exInfo(id)||{imgs:[],steps:[],muscles:[],name:''},e=E
    ${e.cue?`<p><b>Coach cue:</b> ${esc(e.cue)}</p>`:''}${i.steps.length?`<ol>${i.steps.map(s=>`<li>${esc(s)}</li>`).join('')}</ol><p class="small muted">Primary: ${esc(i.muscles.join(', '))}. Photos and steps from free-exercise-db (public domain); shown for the closest match, "${esc(i.name)}".</p>`:`<p><b>Pattern:</b> ${esc(PAT[e.p])} · <b>Equipment:</b> ${esc(e.eq)}</p>`}</div>`);
   $('#x',ov).onclick=()=>ov.remove()}
 
+/* drag-to-reorder: pointer events so it works with touch on iOS (HTML5 DnD does not) */
+function sortable(list,itemSel,onMove){
+  list.querySelectorAll('[data-grip]').forEach(h=>h.addEventListener('pointerdown',e=>{
+    const item=h.closest(itemSel);if(!item||item.parentElement!==list)return;e.preventDefault();
+    const items=()=>[...list.children].filter(x=>x.matches(itemSel));const from=items().indexOf(item);
+    const sc=list.closest('.md');const pid=e.pointerId;item.classList.add('dragging');document.body.style.userSelect='none';if(navigator.vibrate)navigator.vibrate(10);
+    let y=e.clientY,timer=setInterval(()=>{const vh=window.innerHeight;const dy=y<90?-10:y>vh-140?10:0;if(dy)(sc||window).scrollBy(0,dy)},30);
+    const move=ev=>{if(ev.pointerId!==pid)return;ev.preventDefault();y=ev.clientY;const sibs=items().filter(x=>x!==item);let before=null;for(const s2 of sibs){const r=s2.getBoundingClientRect();if(y<r.top+r.height/2){before=s2;break}}
+      if(before){if(item.nextElementSibling!==before)list.insertBefore(item,before)}else if(sibs.length){const last=sibs[sibs.length-1];if(last.nextElementSibling!==item)last.after(item)}};
+    const up=ev=>{if(ev.pointerId!==pid)return;clearInterval(timer);window.removeEventListener('pointermove',move);window.removeEventListener('pointerup',up);window.removeEventListener('pointercancel',up);document.body.style.userSelect='';item.classList.remove('dragging');const to=items().indexOf(item);if(to!==from)onMove(from,to)};
+    window.addEventListener('pointermove',move,{passive:false});window.addEventListener('pointerup',up);window.addEventListener('pointercancel',up);
+  }));
+}
+const GRIP='<button class="grip" data-grip type="button" aria-label="Drag to reorder"><svg viewBox="0 0 24 24"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg></button>';
+function moveIn(arr,from,to){const [x]=arr.splice(from,1);arr.splice(to,0,x);return arr}
+
 /* ================= TODAY ================= */
 function vToday(m){
   const d=today();const inRange=d>=START&&d<=END;const w=inRange?weekNo(d):null;const day=inRange?planDay(d):null;const t=day?TPL[day.tpl]:null;
@@ -430,7 +462,7 @@ function vToday(m){
    <div class="card">
     <div class="row between"><h2>Today's plate</h2><button class="btn sm" id="tdEat">Full log</button></div>
     <div class="stack" style="margin-top:8px">${macroBars(d)}</div>
-    <div style="margin-top:6px">${SLOTS.map(([k,l])=>{const id=meals[k];const mm=MEALS[id];const logged=(S.food[d]?.items||[]).some(i=>i.from===id);const alt=(S.food[d]?.items||[]).filter(i=>i.slot===k&&!i.from);return `<label class="food"><input type="checkbox" data-slot="${k}" data-meal="${id}" ${logged?'checked':''}><div><div class="eyebrow">${l}</div><span style="${alt.length?'text-decoration:line-through;color:var(--muted)':''}">${esc(mm.n)}</span>${alt.length?`<div class="small"><b>Had:</b> ${esc(alt.map(i=>i.n).join(', '))}</div>`:''}</div><span class="k">${mm.k}<br>${mm.p} P</span></label>`}).join('')}</div>
+    <div style="margin-top:6px">${SLOTS.map(([k,l])=>{const id=meals[k];const mm=MEALS[id];const logged=(S.food[d]?.items||[]).some(i=>i.from===id);const alt=(S.food[d]?.items||[]).filter(i=>i.slot===k&&!i.from);return `<div class="food"><input type="checkbox" data-slot="${k}" data-meal="${id}" ${logged||alt.length?'checked':''} aria-label="Log ${esc(l)}"><button class="mealbtn" data-open="${k}"><div class="eyebrow">${l} <span class="chev">›</span></div><span style="${alt.length?'text-decoration:line-through;color:var(--muted)':''}">${esc(mm.n)}</span>${alt.length?`<div class="small"><b>Had:</b> ${esc(alt.map(i=>i.n).join(', '))}</div>`:''}</button><span class="k">${alt.length?alt.reduce((a,i)=>a+i.k,0):mm.k}<br>${alt.length?alt.reduce((a,i)=>a+i.p,0):mm.p} P</span></div>`}).join('')}</div>
    </div>
    <div class="card">
     <h2>Body</h2>
@@ -449,12 +481,13 @@ function vToday(m){
    </div>
   </div>`;
   $('#tdEat').onclick=()=>go('eat',d);
+  m.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>mealSheet(d,b.dataset.open));
   if(t){$('#tdStart').onclick=()=>go('train',d);$('#tdEdit').onclick=()=>editDay(d)}
   m.querySelectorAll('input[data-meal]').forEach(cb=>cb.onchange=()=>toggleMeal(d,cb.dataset.meal,cb.dataset.slot,cb.checked).then(render));
   $('#qAdd').onclick=async()=>{const w=+$('#qw').value;if(!w){toast('Enter a weight');return}await addBody(d,w,+$('#qf').value||null,null,'manual');toast('Logged');render()};
   renderStrava();
 }
-async function toggleMeal(d,mealId,slot,on){const f=S.food[d]||{date:d,items:[]};let items=f.items.filter(i=>i.from!==mealId);if(on)items=items.filter(i=>!(i.slot===slot&&!i.from));if(on){const mm=MEALS[mealId];items.push({n:mm.n,k:mm.k,p:mm.p,c:mm.c,f:mm.f,slot,from:mealId})}await save('food',d,{date:d,items})}
+async function toggleMeal(d,mealId,slot,on){const f=S.food[d]||{date:d,items:[]};let items=f.items.filter(i=>i.from!==mealId&&i.slot!==slot);if(on){const mm=MEALS[mealId];items.push({n:mm.n,k:mm.k,p:mm.p,c:mm.c,f:mm.f,slot,from:mealId})}await save('food',d,{date:d,items})}
 async function addBody(d,w,fat,muscle,src){const ex=S.body[d]||{};await save('body',d,{date:d,w,fat:fat||ex.fat||null,muscle:muscle||ex.muscle||null,src})}
 function renderStrava(){
   const box=$('#stravaList');if(!box)return;
@@ -487,10 +520,11 @@ function editDay(d){
    </div>`);
   const state={tpl:p.tpl,ex:p.ex.map(e=>({...e}))};
   const list=$('#exList',ov);
-  function draw(){list.innerHTML=state.ex.length?`<div class="eyebrow" style="margin-bottom:4px">Exercises</div>`+state.ex.map((e,i)=>`<div class="xrow"><div class="nm">${exName(e.id)}<div class="small muted">${esc(PAT[EX[e.id].p])} · ${esc(EX[e.id].eq)}</div></div><input type="number" value="${e.sets}" min="1" max="8" data-i="${i}" data-k="sets" aria-label="sets" style="width:58px;text-align:center"><span class="muted">×</span><input value="${esc(e.reps)}" data-i="${i}" data-k="reps" aria-label="reps" style="width:64px;font-family:var(--mono);text-align:center"><button class="btn sm" data-sw="${i}">Swap</button><button class="btn sm ghost" data-rm="${i}" aria-label="Remove">✕</button></div>`).join(''):'<p class="small muted">No lifts on this day.</p>';
+  function draw(){list.innerHTML=state.ex.length?`<div class="eyebrow" style="margin-bottom:4px">Exercises</div>`+state.ex.map((e,i)=>`<div class="xrow">${GRIP}<div class="nm">${exName(e.id)}<div class="small muted">${esc(PAT[EX[e.id].p])} · ${esc(EX[e.id].eq)}</div></div><input type="number" value="${e.sets}" min="1" max="8" data-i="${i}" data-k="sets" aria-label="sets" style="width:58px;text-align:center"><span class="muted">×</span><input value="${esc(e.reps)}" data-i="${i}" data-k="reps" aria-label="reps" style="width:64px;font-family:var(--mono);text-align:center"><button class="btn sm" data-sw="${i}">Swap</button><button class="btn sm ghost" data-rm="${i}" aria-label="Remove">✕</button></div>`).join(''):'<p class="small muted">No lifts on this day.</p>';
     list.querySelectorAll('input').forEach(inp=>inp.onchange=()=>{state.ex[+inp.dataset.i][inp.dataset.k]=inp.dataset.k==='sets'?+inp.value:inp.value});
     list.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{state.ex.splice(+b.dataset.rm,1);draw()});
     list.querySelectorAll('[data-sw]').forEach(b=>b.onclick=()=>swapExercise(state.ex[+b.dataset.sw],e=>{state.ex[+b.dataset.sw]=e;draw()}));
+    sortable(list,'.xrow',(from,to)=>{moveIn(state.ex,from,to);draw()});
   }
   draw();
   $('#tplSel',ov).onchange=e=>{state.tpl=e.target.value;state.ex=TPL[state.tpl].ex.map(([id,sets,reps])=>({id,sets,reps}));draw()};
@@ -535,11 +569,12 @@ function vTrain(m){
    ${S.mode==='server'&&tp.k==='lift'?`<button class="btn" id="coachChange" style="align-self:flex-start"><svg viewBox="0 0 24 24" style="width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><path d="M21 12a8 8 0 0 1-8 8H8l-5 3 1.2-4.2A8 8 0 1 1 21 12z"/></svg> Change this workout with the coach</button>`:''}
    <div><div class="eyebrow">Week ${weekNo(d)} · ${esc(phase(weekNo(d)))}</div><h1>${esc(tp.n)} <span class="pill ${tp.k}">${tp.k}</span></h1><p class="small muted" style="margin:4px 0 0">${esc(tp.d)}</p></div></div>
    <div class="stack" id="exs"></div>
+   <button class="btn block" id="addExL" style="margin-top:10px">+ Add exercise</button>
    <div class="card" style="margin-top:14px"><label class="f">Notes<textarea id="notes" rows="2">${esc(log.notes)}</textarea></label>
    <div class="stack" style="margin-top:10px"><button class="btn primary block" id="finish">${log.done?'Marked done ✓':'Finish & mark done'}</button>${log.done?'<button class="btn ghost" id="undone">Un-mark</button>':''}<span class="small muted" id="savedAt"></span></div></div>
    <div class="restbar" id="restbar" hidden><span class="timer" id="timer">—</span><span class="small">rest</span><span style="flex:1"></span><button id="t1"></button><button id="t2"></button><button id="t3"></button><button id="tstop">✕</button></div>`;
   const exs=$('#exs');
-  function draw(){exs.innerHTML=log.ex.length?log.ex.map((e,i)=>{const pl=p.ex[i];const pr=progression(pl,d);const sec=/^\d+\s*s\b/.test(String(pl.reps));return `<div class="ex" data-i="${i}"><div class="hd"><div style="min-width:0"><h3>${exName(e.id,'h3')}</h3><div class="small muted">Target <span class="num">${pl.sets}×${esc(pl.reps)}</span> · ${esc(EX[e.id].eq)}</div>${EX[e.id].cue?`<div class="small muted">${esc(EX[e.id].cue)}</div>`:''}${pr?`<div class="prev">${esc(pr.txt)}${pr.bump?` <span class="pill ok">+${pr.bump} lb today</span>`:''}</div>`:'<div class="prev">First time — leave 2 reps in the tank</div>'}</div><div class="stack" style="gap:6px"><button class="btn sm" data-sw="${i}">Swap</button>${exInfo(e.id)?`<button class="btn sm ghost" data-how="${e.id}">How to</button>`:''}</div></div>
+  function draw(){exs.innerHTML=log.ex.length?log.ex.map((e,i)=>{const pl=p.ex[i];const pr=progression(pl,d);const sec=/^\d+\s*s\b/.test(String(pl.reps));return `<div class="ex" data-i="${i}"><div class="hd">${GRIP}<div style="min-width:0;flex:1"><h3>${exName(e.id,'h3')}</h3><div class="small muted">Target <span class="num">${pl.sets}×${esc(pl.reps)}</span> · ${esc(EX[e.id].eq)}</div>${EX[e.id].cue?`<div class="small muted">${esc(EX[e.id].cue)}</div>`:''}${pr?`<div class="prev">${esc(pr.txt)}${pr.bump?` <span class="pill ok">+${pr.bump} lb today</span>`:''}</div>`:'<div class="prev">First time — leave 2 reps in the tank</div>'}</div><div class="stack" style="gap:6px"><button class="btn sm" data-sw="${i}">Swap</button><button class="btn sm ghost" data-rmx="${i}" aria-label="Remove exercise">Remove</button></div></div>
     ${exInfo(e.id)?`<div class="thumbs" data-how="${e.id}" role="button" tabindex="0" aria-label="How to ${esc(EX[e.id].n)}">${exInfo(e.id).imgs.map(s=>`<img src="${s}" alt="" loading="lazy">`).join('')}</div>`:''}
     <div class="sets"><span class="lbl">Set</span><span class="lbl">lb</span><span class="lbl">${sec?'sec':'reps'}</span><span></span>
     ${e.sets.map((s,j)=>`<span class="num muted">${j+1}</span><input type="number" step="2.5" inputmode="decimal" value="${esc(s.w)}" placeholder="${pr&&pr.w?pr.w+(pr.bump||0):'—'}" data-i="${i}" data-j="${j}" data-k="w" aria-label="weight"><input type="number" inputmode="numeric" value="${esc(s.r)}" placeholder="${esc(String(pl.reps).match(/\d+/)?.[0]||'')}" data-i="${i}" data-j="${j}" data-k="r" aria-label="reps"><button class="chk ${s.done?'on':''}" data-i="${i}" data-j="${j}" aria-label="set done">✓</button>`).join('')}</div>
@@ -549,7 +584,13 @@ function vTrain(m){
     exs.querySelectorAll('[data-add]').forEach(b=>b.onclick=()=>{log.ex[+b.dataset.add].sets.push({w:'',r:'',done:false});persist();draw()});
     exs.querySelectorAll('[data-how]').forEach(b=>b.onclick=()=>howTo(b.dataset.how));
     exs.querySelectorAll('[data-sw]').forEach(b=>b.onclick=()=>swapExercise(p.ex[+b.dataset.sw],async e=>{if(!S.plan.days[d])S.plan.days[d]={tpl:p.tpl,ex:p.ex};S.plan.days[d].ex[+b.dataset.sw]=e;await save('plan','days',S.plan);render()}));
+    exs.querySelectorAll('[data-rmx]').forEach(b=>b.onclick=()=>{const i=+b.dataset.rmx;const done=log.ex[i].sets.some(x=>x.done);
+      const go2=async()=>{p.ex.splice(i,1);log.ex.splice(i,1);await savePlanAndLog();draw()};
+      if(!done)return go2();const ov=modal(`<h2>Remove ${esc(EX[log.ex[i].id].n)}?</h2><p class="small muted">You already logged sets for it today; they'll be removed too.</p><div class="row"><button class="btn primary" id="ok" style="flex:1">Remove</button><button class="btn ghost" id="no">Keep</button></div>`);$('#no',ov).onclick=()=>ov.remove();$('#ok',ov).onclick=()=>{ov.remove();go2()}});
+    sortable(exs,'.ex',async(from,to)=>{moveIn(p.ex,from,to);moveIn(log.ex,from,to);await savePlanAndLog();draw()});
   }
+  async function savePlanAndLog(){S.plan.days[d]={tpl:p.tpl,ex:p.ex.map(e=>({...e}))};await save('plan','days',S.plan);log.notes=$('#notes').value;await save('logs',d,log)}
+  $('#addExL').onclick=()=>pickExercise(null,async e=>{p.ex.push(e);log.ex.push({id:e.id,target:e.sets+'×'+e.reps,sets:Array.from({length:e.sets},()=>({w:'',r:'',done:false}))});await savePlanAndLog();draw();setTimeout(()=>exs.lastElementChild&&exs.lastElementChild.scrollIntoView({behavior:'smooth',block:'center'}),50)});
   let pt=null;function persist(){clearTimeout(pt);pt=setTimeout(async()=>{log.notes=$('#notes').value;await save('logs',d,log);const s=$('#savedAt');if(s)s.textContent='saved'},400)}
   draw();wireDayNav(d,'train');$('#editD').onclick=()=>editDay(d);
   const cc=$('#coachChange');if(cc)cc.onclick=()=>{chatOpen();$('#chatIn').value='Rebuild today\'s workout based on what I did and missed this past week. ';$('#chatIn').focus();$('#chatIn').setSelectionRange(999,999)};
@@ -568,12 +609,12 @@ function vEat(m){
    <div><div class="eyebrow">${d<addDays(START,3)?'Maintenance · marathon recovery':'~500 kcal deficit'} · plan ${pt.k} kcal / ${pt.p} g P</div><h1>${esc(fmtD(d))}</h1></div></div>
   <div class="grid g2">
    <div class="card hero"><h2>Eaten today</h2><div class="stack" style="margin:8px 0">${macroBars(d)}</div>
-    <div class="eyebrow" style="margin-top:8px">Planned meals · tap to log, "swap" to change ${DOWS[dow]}s</div>
-    ${SLOTS.map(([k,l])=>{const id=mealId(dow,k);const mm=MEALS[id];const on=items.some(i=>i.from===id);const alt=items.filter(i=>i.slot===k&&!i.from);return `<div class="food"><input type="checkbox" id="m_${k}" data-meal="${id}" data-slot="${k}" ${on?'checked':''}><label for="m_${k}"><div class="eyebrow">${l}</div><span class="${alt.length?'muted':''}" style="${alt.length?'text-decoration:line-through':''}">${esc(mm.n)}</span>${alt.length?`<div class="small"><b>Had instead:</b> ${esc(alt.map(i=>i.n).join(', '))} <span class="num muted">${alt.reduce((a,i)=>a+i.k,0)} kcal · ${alt.reduce((a,i)=>a+i.p,0)}P</span></div>`:''}</label><div style="text-align:right"><span class="k">${mm.k} · ${mm.p}P</span><br><button class="btn sm ghost" data-swap="${k}">swap</button> <button class="btn sm ghost" data-alt="${k}" title="Log what you actually ate">had other</button></div></div>`}).join('')}
+    <div class="eyebrow" style="margin-top:8px">Planned meals · tick the box to log, tap a meal to open it</div>
+    ${SLOTS.map(([k,l])=>{const id=mealId(dow,k);const mm=MEALS[id];const on=items.some(i=>i.from===id);const alt=items.filter(i=>i.slot===k&&!i.from);return `<div class="food"><input type="checkbox" id="m_${k}" data-meal="${id}" data-slot="${k}" ${on||alt.length?'checked':''} aria-label="Log ${esc(l)}"><button class="mealbtn" data-open="${k}"><div class="eyebrow">${l} <span class="chev">›</span></div><span class="${alt.length?'muted':''}" style="${alt.length?'text-decoration:line-through':''}">${esc(mm.n)}</span>${alt.length?`<div class="small"><b>Had instead:</b> ${esc(alt.map(i=>i.n).join(', '))} <span class="num muted">${alt.reduce((a,i)=>a+i.k,0)} kcal · ${alt.reduce((a,i)=>a+i.p,0)}P</span></div>`:''}</button><div style="text-align:right"><span class="k">${mm.k} · ${mm.p}P</span><br><button class="btn sm ghost" data-alt="${k}" title="Log what you actually ate">had other</button></div></div>`}).join('')}
     <div class="eyebrow" style="margin-top:12px">Add by camera</div>
     ${S.mode==='server'?`<div class="capture"><button class="btn" id="capPhoto"><svg viewBox="0 0 24 24"><path d="M4 7h3l2-3h6l2 3h3v12H4z"/><circle cx="12" cy="13" r="3.5"/></svg>Photo</button><button class="btn" id="capScan"><svg viewBox="0 0 24 24"><path d="M3 7V4h3M21 7V4h-3M3 17v3h3M21 17v3h-3M7 8v8M10 8v8M13 8v8M17 8v8"/></svg>Barcode</button><button class="btn" id="capSearch"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>Search</button></div><input type="file" id="foodPhoto" accept="image/*" capture="environment" hidden>`:`<p class="small muted">Photo, barcode and search logging run on the self-hosted app (recomp8-production.up.railway.app).</p>`}
     <div class="eyebrow" style="margin-top:12px">Other food</div>
-    ${items.filter(i=>!i.from&&!i.slot).map((i,ix)=>`<div class="food"><button class="btn sm ghost" data-rmf="${ix}" aria-label="Remove">✕</button><div>${esc(i.n)}${i.src==='text'||i.src==='photo'?' <span class="tag">est.</span>':''}</div><span class="k">${i.k} · ${i.p}P ${i.c}C ${i.f}F</span></div>`).join('')||'<p class="small muted">Nothing extra logged.</p>'}
+    ${items.map((i,ix)=>({i,ix})).filter(x=>!x.i.from&&!x.i.slot).map(({i,ix})=>`<div class="food"><button class="btn sm ghost" data-rmf="${ix}" aria-label="Remove">✕</button><div><button class="itembtn" data-edit="${ix}">${esc(i.n)}</button>${i.src==='text'||i.src==='photo'||i.src==='coach'?' <span class="tag">est.</span>':''}</div><span class="k">${i.k} · ${i.p}P ${i.c}C ${i.f}F</span></div>`).join('')||'<p class="small muted">Nothing extra logged.</p>'}
     <form id="addF" class="stack" style="margin-top:8px"><textarea id="fn" rows="2" placeholder="Type what you ate, e.g. 3 eggs, 2 slices toast, 1 tbsp olive oil" required></textarea><div class="row nowrap"><button class="btn primary" style="flex:1" id="estBtn">${S.mode==='server'?'Estimate macros & log':'Add food'}</button><button type="button" class="btn ghost sm" id="manualTog">manual</button></div><div class="row nowrap" id="manualRow" hidden><input type="number" id="fk" placeholder="kcal" inputmode="numeric"><input type="number" id="fp" placeholder="P g" inputmode="numeric"><input type="number" id="fc" placeholder="C g" inputmode="numeric"><input type="number" id="ff" placeholder="F g" inputmode="numeric"></div></form>
    </div>
    <div class="card"><h2>Weekly plan</h2><p class="small muted" style="margin:4px 0 8px">Each weekday has its own menu; a swap applies to that weekday for the rest of the plan.</p>
@@ -589,7 +630,9 @@ function vEat(m){
   wireDayNav(d,'eat');
   m.querySelectorAll('input[data-meal]').forEach(cb=>cb.onchange=()=>toggleMeal(d,cb.dataset.meal,cb.dataset.slot,cb.checked).then(render));
   m.querySelectorAll('[data-swap]').forEach(b=>b.onclick=()=>swapMeal(dow,b.dataset.swap));
-  m.querySelectorAll('[data-rmf]').forEach(b=>b.onclick=async()=>{const extra=items.filter(i=>!i.from&&!i.slot);extra.splice(+b.dataset.rmf,1);await save('food',d,{date:d,items:[...items.filter(i=>i.from||i.slot),...extra]});render()});
+  m.querySelectorAll('[data-rmf]').forEach(b=>b.onclick=async()=>{items.splice(+b.dataset.rmf,1);await save('food',d,{date:d,items});render()});
+  m.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>editItem(d,+b.dataset.edit));
+  m.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>mealSheet(d,b.dataset.open));
   $('#manualTog').onclick=()=>{const r=$('#manualRow');r.hidden=!r.hidden;$('#estBtn').textContent=r.hidden&&S.mode==='server'?'Estimate macros & log':'Add food'};
   $('#addF').onsubmit=async e=>{e.preventDefault();const text=$('#fn').value.trim();if(!text)return;const manual=!$('#manualRow').hidden&&$('#fk').value;
     if(manual||S.mode!=='server'){items.push({n:text,k:+$('#fk').value||0,p:+$('#fp').value||0,c:+$('#fc').value||0,f:+$('#ff').value||0,src:'manual'});await save('food',d,{date:d,items});render();return}
@@ -607,18 +650,18 @@ async function photoFood(d,file){
   try{const r=await api('POST','/food/analyze',{image:dataUrl.split(',')[1],mime:'image/jpeg'});ov.remove();reviewFood(d,r.items||[],r.note,dataUrl,'photo')}
   catch(e){const msg=e.code==='http_503'?'Photo logging needs an Anthropic API key on the server (Railway → recomp8 → Variables → ANTHROPIC_API_KEY).':e.code==='http_502'?'The estimator could not read that photo. Try closer, with better light.':'Could not analyze ('+(e.code||'error')+').';$('#pvmsg',ov).textContent=msg;ov.querySelector('h2').textContent='Photo not logged'}
 }
-async function textFood(d,text,slot){
+async function textFood(d,text,slot,append){
   const ov=modal(`<h2>Estimating…</h2><p class="small muted">"${esc(text)}"</p><p class="small muted" id="pvmsg">Claude is working out portions and macros.</p>`);
-  try{const r=await api('POST','/food/estimate',{text,slot:slot?SLOTS.find(s=>s[0]===slot)[1]:''});ov.remove();reviewFood(d,r.items||[],r.note,null,'text',slot,text)}
+  try{const r=await api('POST','/food/estimate',{text,slot:slot?SLOTS.find(s=>s[0]===slot)[1]:''});ov.remove();reviewFood(d,r.items||[],r.note,null,'text',slot,text,append)}
   catch(e){$('#pvmsg',ov).textContent=e.code==='http_503'?'Needs ANTHROPIC_API_KEY on the server.':'Could not estimate ('+(e.code||'error')+'). Use "manual" to enter macros.';ov.querySelector('h2').textContent='Not logged'}
 }
-function hadOther(d,slot){
+function hadOther(d,slot,append){
   const l=SLOTS.find(s=>s[0]===slot)[1];const planned=MEALS[mealId(pd(d).getDay(),slot)];
   const ov=modal(`<h2>What did you have for ${esc(l.toLowerCase())}?</h2><p class="small muted">Planned: ${esc(planned.n)}. This replaces it for today only; the weekly plan stays.</p><form id="hf" class="stack"><textarea id="ht" rows="2" placeholder="e.g. 3 eggs, 2 slices toast, 1 tbsp olive oil" required></textarea><button class="btn primary block">Estimate & log</button></form>`);
   setTimeout(()=>$('#ht',ov).focus(),50);
-  $('#hf',ov).onsubmit=e=>{e.preventDefault();const t=$('#ht',ov).value.trim();if(!t)return;ov.remove();textFood(d,t,slot)};
+  $('#hf',ov).onsubmit=e=>{e.preventDefault();const t=$('#ht',ov).value.trim();if(!t)return;ov.remove();textFood(d,t,slot,append)};
 }
-function reviewFood(d,items,note,preview,src,slot,rawText){
+function reviewFood(d,items,note,preview,src,slot,rawText,append){
   if(!items.length){const ov=modal(`<h2>No food found</h2><p class="small muted">${esc(note||'Try a closer shot with the whole plate in frame.')}</p><button class="btn block" id="x">Close</button>`);$('#x',ov).onclick=()=>ov.remove();return}
   const ov=modal(`<div class="row between nowrap"><h2>Confirm and log</h2><button class="btn sm" id="x">Close</button></div>${preview?`<img class="preview" src="${preview}" alt="" style="margin:8px 0">`:''}${note?`<p class="small muted">${esc(note)}</p>`:''}
    <div id="fl">${items.map((it,i)=>`<div class="fitem"><input type="checkbox" checked data-i="${i}"><div><div class="row between nowrap"><input value="${esc(it.n||it.name)}" data-i="${i}" data-k="n" aria-label="Name" style="flex:1"><span class="conf ${esc(it.confidence||'')}">${esc(it.confidence||'')}</span></div>${it.portion?`<div class="small muted">${esc(it.portion)}</div>`:''}<div class="nums"><label>kcal<input type="number" inputmode="numeric" value="${Math.round(it.k||it.kcal||0)}" data-i="${i}" data-k="k"></label><label>P g<input type="number" inputmode="numeric" value="${Math.round(it.p||0)}" data-i="${i}" data-k="p"></label><label>C g<input type="number" inputmode="numeric" value="${Math.round(it.c||0)}" data-i="${i}" data-k="c"></label><label>F g<input type="number" inputmode="numeric" value="${Math.round(it.f||0)}" data-i="${i}" data-k="f"></label></div></div></div>`).join('')}</div>
@@ -628,7 +671,7 @@ function reviewFood(d,items,note,preview,src,slot,rawText){
   ov.querySelectorAll('input[data-k]').forEach(inp=>inp.oninput=()=>{vals[+inp.dataset.i][inp.dataset.k]=inp.dataset.k==='n'?inp.value:+inp.value});
   $('#x',ov).onclick=()=>ov.remove();
   $('#logBtn',ov).onclick=async()=>{const sel=[...ov.querySelectorAll('input[type=checkbox]')].filter(c=>c.checked).map(c=>vals[+c.dataset.i]);if(!sel.length){toast('Nothing selected');return}ov.remove();
-    if(slot){const planned=mealId(pd(d).getDay(),slot);const f=S.food[d]||{date:d,items:[]};f.items=f.items.filter(i=>i.from!==planned&&!(i.slot===slot&&!i.from));S.food[d]=f}
+    if(slot&&!append){const planned=mealId(pd(d).getDay(),slot);const f=S.food[d]||{date:d,items:[]};f.items=f.items.filter(i=>i.from!==planned&&!(i.slot===slot&&!i.from));S.food[d]=f}
     await logItems(d,sel)};
 }
 function loadScript(src){return new Promise((res,rej)=>{if(document.querySelector(`script[src="${src}"]`))return res();const s=document.createElement('script');s.src=src;s.onload=res;s.onerror=rej;document.head.appendChild(s)})}
@@ -660,6 +703,57 @@ function searchFoodSheet(d){
     try{const r=await api('GET','/food/search?q='+encodeURIComponent(q));res.innerHTML=r.foods.length?r.foods.map((f,i)=>`<button class="opt" data-i="${i}"><span style="flex:1;min-width:0"><b>${esc(f.name)}</b>${f.brand?`<br><span class="small muted">${esc(f.brand)}</span>`:''}</span><span class="k">${Math.round(f.per100.kcal)} kcal<br>${Math.round(f.per100.p)} P /100g</span></button>`).join(''):'<p class="small muted">No matches. Try fewer words.</p>';
       res.querySelectorAll('.opt').forEach(b=>b.onclick=()=>{ov.remove();productSheet(d,{...r.foods[+b.dataset.i],source:r.source})})}
     catch(err){res.innerHTML='<p class="small muted">'+(err.code==='http_429'?'USDA demo key rate-limited for this hour. Add FDC_API_KEY on the server for unlimited lookups.':'Search failed ('+(err.code||'error')+').')+'</p>'}};
+}
+/* tap a meal: details + actions. Logging only happens from the checkbox or the explicit buttons here. */
+function mealSheet(d,slot){
+  const dow=pd(d).getDay(),id=mealId(dow,slot),mm=MEALS[id],l=SLOTS.find(s=>s[0]===slot)[1];
+  const f=S.food[d]||{date:d,items:[]};const logged=f.items.some(i=>i.from===id);const alt=f.items.map((it,ix)=>({it,ix})).filter(x=>x.it.slot===slot&&!x.it.from);
+  const tot=alt.reduce((a,x)=>({k:a.k+x.it.k,p:a.p+x.it.p,c:a.c+x.it.c,f:a.f+x.it.f}),{k:0,p:0,c:0,f:0});
+  const kpi=(k,p,c,fa)=>`<div class="kpi" style="margin:10px 0;grid-template-columns:repeat(4,1fr);gap:6px"><div><b>${Math.round(k)}</b><span>kcal</span></div><div><b>${Math.round(p)}</b><span>protein g</span></div><div><b>${Math.round(c)}</b><span>carbs g</span></div><div><b>${Math.round(fa)}</b><span>fat g</span></div></div>`;
+  const ov=modal(`<div class="row between nowrap"><div style="min-width:0"><div class="eyebrow">${esc(l)} · ${esc(fmtD(d))}</div><h2>${esc(alt.length?'What you had':mm.n)}</h2></div><button class="btn sm" id="x">Close</button></div>
+   ${alt.length?`${kpi(tot.k,tot.p,tot.c,tot.f)}<div>${alt.map(({it,ix})=>`<div class="food"><button class="btn sm ghost" data-del="${ix}" aria-label="Remove">✕</button><button class="itembtn" data-edit="${ix}">${esc(it.n)}</button><span class="k">${it.k} · ${it.p}P ${it.c}C ${it.f}F</span></div>`).join('')}</div>
+     <p class="small muted">Instead of the planned <b>${esc(mm.n)}</b> (${mm.k} kcal · ${mm.p}P). Tap an item to edit it.</p>`
+    :`${kpi(mm.k,mm.p,mm.c,mm.f)}${mm.i&&mm.i.length?`<div class="eyebrow">Ingredients</div><ul style="margin:6px 0 0;padding-left:18px">${mm.i.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}<p class="small" style="margin-top:10px">${logged?'<b style="color:var(--good)">Logged ✓</b>':'<span class="muted">Not logged yet</span>'}</p>`}
+   <div class="stack" style="margin-top:12px">
+    ${alt.length?`<button class="btn" id="addMore">+ Add another item to ${esc(l.toLowerCase())}</button><button class="btn ghost" id="backPlan">Go back to the planned meal</button>`
+      :`<button class="btn ${logged?'ghost':'primary'}" id="logIt">${logged?'Unlog':'Log as eaten'}</button>${logged?`<button class="btn" id="adjust">Adjust portion / macros</button>`:''}`}
+    <button class="btn" id="hadElse">I had something else (type it)</button>
+    <button class="btn" id="replToday">Replace with a different meal today</button>
+    <button class="btn ghost" id="replWeek">Change the plan for every ${DOWS[dow]}</button>
+   </div>`);
+  const close=()=>ov.remove();$('#x',ov).onclick=close;
+  const lt=$('#logIt',ov);if(lt)lt.onclick=async()=>{close();await toggleMeal(d,id,slot,!logged);render()};
+  const aj=$('#adjust',ov);if(aj)aj.onclick=()=>{const ix=f.items.findIndex(i=>i.from===id);close();editItem(d,ix,true)};
+  const bp=$('#backPlan',ov);if(bp)bp.onclick=async()=>{close();await toggleMeal(d,id,slot,true);render()};
+  const am=$('#addMore',ov);if(am)am.onclick=()=>{close();hadOther(d,slot,true)};
+  $('#hadElse',ov).onclick=()=>{close();hadOther(d,slot)};
+  $('#replToday',ov).onclick=()=>{close();replaceToday(d,slot)};
+  $('#replWeek',ov).onclick=()=>{close();swapMeal(dow,slot)};
+  ov.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>{close();editItem(d,+b.dataset.edit)});
+  ov.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{f.items.splice(+b.dataset.del,1);await save('food',d,{date:d,items:f.items});close();render();mealSheet(d,slot)});
+}
+function editItem(d,ix,fromPlanned){
+  const f=S.food[d];const it=f&&f.items[ix];if(!it)return;
+  const ov=modal(`<div class="row between nowrap"><h2>Edit food</h2><button class="btn sm" id="x">Close</button></div>
+   <form id="ef" class="stack" style="margin-top:10px"><label class="f">Name<input id="en" value="${esc(it.n)}" required></label>
+   <div class="row nowrap"><label class="f">Portion ×<input type="number" id="em" value="1" step="0.25" min="0.25" inputmode="decimal"></label><p class="small muted" style="margin:18px 0 0;flex:2">Scales all four numbers</p></div>
+   <div class="row nowrap"><label class="f">kcal<input type="number" id="ek" value="${it.k}" inputmode="numeric"></label><label class="f">P g<input type="number" id="ep" value="${it.p}" inputmode="numeric"></label><label class="f">C g<input type="number" id="ec" value="${it.c}" inputmode="numeric"></label><label class="f">F g<input type="number" id="eF" value="${it.f}" inputmode="numeric"></label></div>
+   <button class="btn primary block">Save</button><button type="button" class="btn ghost" id="edel">Delete this item</button></form>`);
+  const base={k:it.k,p:it.p,c:it.c,f:it.f};$('#em',ov).oninput=e=>{const x=+e.target.value||1;$('#ek',ov).value=Math.round(base.k*x);$('#ep',ov).value=Math.round(base.p*x);$('#ec',ov).value=Math.round(base.c*x);$('#eF',ov).value=Math.round(base.f*x)};
+  $('#x',ov).onclick=()=>ov.remove();
+  $('#edel',ov).onclick=async()=>{f.items.splice(ix,1);await save('food',d,{date:d,items:f.items});ov.remove();render()};
+  $('#ef',ov).onsubmit=async e=>{e.preventDefault();const upd={...it,n:$('#en',ov).value.trim()||it.n,k:+$('#ek',ov).value||0,p:+$('#ep',ov).value||0,c:+$('#ec',ov).value||0,f:+$('#eF',ov).value||0};
+    if(fromPlanned&&it.from){delete upd.from;upd.src='edited'}f.items[ix]=upd;await save('food',d,{date:d,items:f.items});ov.remove();toast('Saved');render()};
+}
+function replaceToday(d,slot){
+  const dow=pd(d).getDay(),curId=mealId(dow,slot),cur=MEALS[curId],l=SLOTS.find(s=>s[0]===slot)[1];
+  const dist=m=>Math.abs(m.p-cur.p)*3+Math.abs(m.k-cur.k)/20;const alts=Object.keys(MEALS).filter(k=>MEALS[k].s===slot&&k!==curId&&MEALS[k].k>0).sort((a,b)=>dist(MEALS[a])-dist(MEALS[b]));
+  const ov=modal(`<div class="row between nowrap"><div><div class="eyebrow">${esc(l)} · ${esc(fmtD(d))} only</div><h2>Replace today's meal</h2></div><button class="btn sm" id="x">Close</button></div>
+   <p class="small muted">Logs the meal you pick for today. The weekly plan stays as is.</p>
+   <div class="stack">${alts.map(k=>`<button class="opt" data-k="${k}"><span><b>${esc(MEALS[k].n)}</b><br><span class="small muted">${esc(MEALS[k].i.join(', '))}</span></span><span class="k">${MEALS[k].k}<br>${MEALS[k].p} P</span></button>`).join('')}</div>
+   <button class="btn block" id="typeIt" style="margin-top:10px">Not listed — type what I had</button>`);
+  $('#x',ov).onclick=()=>ov.remove();$('#typeIt',ov).onclick=()=>{ov.remove();hadOther(d,slot)};
+  ov.querySelectorAll('.opt').forEach(b=>b.onclick=async()=>{const m=MEALS[b.dataset.k];const f=S.food[d]||{date:d,items:[]};const items=f.items.filter(i=>i.slot!==slot&&i.from!==curId);items.push({n:m.n,k:m.k,p:m.p,c:m.c,f:m.f,slot,src:'library'});await save('food',d,{date:d,items});ov.remove();toast('Replaced');render()});
 }
 function swapMeal(dow,slot){
   const curId=mealId(dow,slot);const cur=MEALS[curId];
