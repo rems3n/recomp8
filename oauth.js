@@ -21,7 +21,7 @@ function makeOAuth({ DATA_DIR, APP_KEY }) {
   const base = req => process.env.PUBLIC_URL || ((req.headers['x-forwarded-proto'] || 'http').split(',')[0] + '://' + (req.headers['x-forwarded-host'] || req.headers.host));
   const json = (res, code, body, extra) => { res.writeHead(code, Object.assign({ 'content-type': 'application/json', 'cache-control': 'no-store', 'access-control-allow-origin': '*' }, extra || {})); res.end(JSON.stringify(body)); };
   const readForm = req => new Promise((resolve, reject) => { let s = ''; req.on('data', d => { s += d; if (s.length > 1e5) { reject(new Error('too large')); req.destroy(); } }); req.on('end', () => { try { resolve(/json/.test(req.headers['content-type'] || '') ? JSON.parse(s || '{}') : Object.fromEntries(new URLSearchParams(s))); } catch (e) { reject(e); } }); });
-  const okRedirect = u => { try { const x = new URL(u); return x.protocol === 'https:' || ((x.hostname === 'localhost' || x.hostname === '127.0.0.1') && x.protocol === 'http:'); } catch (e) { return false; } };
+  const okRedirect = u => { try { const x = new URL(u); return x.protocol === 'https:' || ((x.hostname === 'localhost' || x.hostname === '127.0.0.1' || x.hostname === '[::1]') && x.protocol === 'http:'); } catch (e) { return false; } };
   const prune = () => { const now = Date.now(); for (const k of Object.keys(db.access)) if (db.access[k].exp < now) delete db.access[k]; for (const k of Object.keys(db.refresh)) if (db.refresh[k].exp < now) delete db.refresh[k]; };
   const pinOk = pin => { const a = Buffer.from(sha(String(pin || ''))), b = Buffer.from(sha(String(APP_KEY))); return !!APP_KEY && crypto.timingSafeEqual(a, b); };
 
@@ -44,7 +44,10 @@ function makeOAuth({ DATA_DIR, APP_KEY }) {
   async function checkAuthz(q) {
     const client = await getClient(q.client_id);
     if (!client) return { err: 'Unknown client. Register first (dynamic client registration) or use a client-ID metadata URL.' };
-    if (!q.redirect_uri || !client.redirect_uris.includes(q.redirect_uri)) return { err: 'redirect_uri does not match the registered client.' };
+    // RFC 8252 §7.3: loopback redirect URIs match on any port (native clients pick an ephemeral one per login)
+    const loop = u => { try { const x = new URL(u); return (x.hostname === '127.0.0.1' || x.hostname === 'localhost' || x.hostname === '[::1]') && x.protocol === 'http:' ? x.pathname : null; } catch (e) { return null; } };
+    const match = client.redirect_uris.includes(q.redirect_uri) || (loop(q.redirect_uri) !== null && client.redirect_uris.some(r => loop(r) !== null && loop(r) === loop(q.redirect_uri)));
+    if (!q.redirect_uri || !match) return { err: 'redirect_uri does not match the registered client.' };
     return { client };
   }
 
