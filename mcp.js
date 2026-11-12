@@ -5,7 +5,7 @@
 const PROTOCOL = '2025-06-18';
 
 function makeMcp(ctx) {
-  const { store, persist, EXLIB, planDay, mealsFor, foodTotals, exName, buildContext, addDays, weekNo, DOWS, pd, START_DATE, END_DATE, WEEK_MEALS } = ctx;
+  const { getGoals, setGoals, store, persist, EXLIB, planDay, mealsFor, foodTotals, exName, buildContext, addDays, weekNo, DOWS, pd, START_DATE, END_DATE, WEEK_MEALS } = ctx;
   const today = () => new Date().toISOString().slice(0, 10);
   const isDate = s => /^\d{4}-\d{2}-\d{2}$/.test(s || '');
   const days = () => { if (!store.plan.days) store.plan.days = { days: {} }; if (!store.plan.days.days) store.plan.days.days = {}; return store.plan.days.days; };
@@ -54,7 +54,15 @@ function makeMcp(ctx) {
   def('add_note', 'Attach a free-text note to a date\'s session (pain, energy, gym crowding, travel).', { date: S('YYYY-MM-DD'), note: S('text') }, ['date', 'note'], a => { const p = planDay(a.date); const log = store.logs[a.date] || { date: a.date, tpl: p.tpl, done: false, notes: '', ex: [] }; log.notes = (log.notes ? log.notes + '\n' : '') + a.note; store.logs[a.date] = log; persist(); return { ok: true }; });
 
   // ---- JSON-RPC plumbing ----
-  const tools = () => Object.values(T).map(t => ({ name: t.name, description: t.description, inputSchema: t.inputSchema }));
+  const G = d => ({ type: ['number', 'null'], description: d });
+  def('get_goals', 'Outcome goals (target weight/body fat/date, weekly session counts, steps, protein floor, loss rate, notes), the daily calorie/macro targets, and progress toward the weight goal.', {}, [], () => { const g = getGoals(); const rows = Object.values(store.body).sort((x, y) => x.date < y.date ? -1 : 1); const latest = rows[rows.length - 1]; const progress = latest && g.target_weight_lb ? { start_lb: rows[0].w, latest_lb: latest.w, latest_date: latest.date, to_go_lb: +(latest.w - g.target_weight_lb).toFixed(1), days_left: g.target_date ? Math.round((pd(g.target_date) - pd(today())) / 864e5) : null } : null; return { goals: g, daily_targets: settings(), progress }; });
+  def('set_goals', 'Change outcome goals. Only the fields passed change; pass null to clear one. For daily calories/macros use set_targets.', { target_weight_lb: G('goal body weight, lb'), target_body_fat_pct: G('goal body fat %'), target_date: { type: ['string', 'null'], description: 'YYYY-MM-DD' }, weekly_lift_sessions: G('lifting sessions per week'), weekly_cardio_sessions: G('cardio sessions per week'), daily_steps: G('steps per day'), protein_floor_g: G('minimum protein per day, g'), weekly_loss_lb: G('intended loss rate, lb/week'), notes: { type: ['string', 'null'], description: 'free-text goal notes' } }, [], a => ({ ok: true, goals: setGoals(a) }));
+
+  // annotations: clients (ChatGPT, Claude) use these to decide when to ask before acting
+  const READ = n => /^(get_|list_)/.test(n) || n === 'weekly_review';
+  const DESTRUCTIVE = new Set(['remove_food', 'reset_day', 'set_day_exercises', 'set_day_template', 'move_session']);
+  const title = n => n.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
+  const tools = () => Object.values(T).map(t => ({ name: t.name, title: title(t.name), description: t.description, inputSchema: t.inputSchema, annotations: READ(t.name) ? { title: title(t.name), readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } : { title: title(t.name), readOnlyHint: false, destructiveHint: DESTRUCTIVE.has(t.name), idempotentHint: !['log_food', 'add_custom_meal', 'add_note'].includes(t.name), openWorldHint: false } }));
   const rpc = async msg => {
     const { id, method, params } = msg || {};
     const ok = result => ({ jsonrpc: '2.0', id, result });

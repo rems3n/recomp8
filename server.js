@@ -129,6 +129,7 @@ PAST 7 DAYS — DONE SETS BY PATTERN: ${patLine}
 PAST 7 DAYS — MISSED LIFT SESSIONS: ${missed.length ? missed.join('; ') : 'none'}
 RECENT SESSIONS (last 14 days): ${recent.length ? recent.join('\n') : 'none yet'}
 BODY (last 14 entries): ${body.length ? body.join('; ') : 'no weigh-ins yet'}
+GOALS: ${JSON.stringify(getGoals())}
 TARGETS: ${settings.kcal} kcal, ${settings.p} g protein, ${settings.c} g carbs, ${settings.f} g fat per day.
 FOOD TODAY: ${Math.round(food.kcal)} kcal, ${Math.round(food.p)}P ${Math.round(food.c)}C ${Math.round(food.f)}F${food.items.length ? ' (' + food.items.join(', ') + ')' : ' (nothing logged)'}
 TODAY'S PLANNED MEALS: ${EXLIB.slots.map(([k, l]) => `${l}: ${meals[k].n} [${meals[k].id}] ${meals[k].k} kcal/${meals[k].p}P`).join('; ')}`;
@@ -147,6 +148,7 @@ const TOOLS = [
   { name: 'log_food', description: 'Log food to a date. If the food was eaten AS or INSTEAD OF a meal (breakfast, lunch, dinner, post-lift snack, evening), pass slot: it REPLACES whatever is logged for that slot and the planned meal. Omit slot only for extra snacks on top of the plan.', input_schema: { type: 'object', properties: { date: { type: 'string' }, slot: { type: 'string', enum: ['b', 'l', 's', 'd', 'e'], description: 'b=breakfast l=lunch s=post-lift/snack d=dinner e=evening' }, items: { type: 'array', items: { type: 'object', properties: { n: { type: 'string' }, k: { type: 'number' }, p: { type: 'number' }, c: { type: 'number' }, f: { type: 'number' } }, required: ['n', 'k', 'p'] } } }, required: ['date', 'items'] } },
   { name: 'log_body', description: 'Record a weigh-in.', input_schema: { type: 'object', properties: { date: { type: 'string' }, w: { type: 'number', description: 'lb' }, fat: { type: 'number' }, muscle: { type: 'number' } }, required: ['date', 'w'] } },
   { name: 'set_meal', description: 'Change the planned meal for a weekday slot (applies to that weekday for the rest of the plan).', input_schema: { type: 'object', properties: { weekday: { type: 'integer' }, slot: { type: 'string' }, meal_id: { type: 'string' } }, required: ['weekday', 'slot', 'meal_id'] } },
+  { name: 'set_goals', description: 'Change outcome goals (target weight, body fat, date, weekly session counts, steps, protein floor, weekly loss rate, notes). Only the fields passed change; null clears a field.', input_schema: { type: 'object', properties: { target_weight_lb: { type: 'number' }, target_body_fat_pct: { type: 'number' }, target_date: { type: 'string' }, weekly_lift_sessions: { type: 'number' }, weekly_cardio_sessions: { type: 'number' }, daily_steps: { type: 'number' }, protein_floor_g: { type: 'number' }, weekly_loss_lb: { type: 'number' }, notes: { type: 'string' } }, required: [] } },
   { name: 'set_targets', description: 'Change daily calorie/macro targets.', input_schema: { type: 'object', properties: { kcal: { type: 'number' }, p: { type: 'number' }, c: { type: 'number' }, f: { type: 'number' } }, required: [] } },
   { name: 'get_history', description: 'Full workout logs, food totals and weigh-ins for a date range (use when the summary in context is not enough).', input_schema: { type: 'object', properties: { from: { type: 'string' }, to: { type: 'string' } }, required: ['from', 'to'] } },
   { name: 'get_day', description: 'The planned exercises and any log for one date.', input_schema: { type: 'object', properties: { date: { type: 'string' } }, required: ['date'] } }
@@ -162,6 +164,7 @@ function runTool(name, a) {
     case 'log_food': { const f = store.food[a.date] || { date: a.date, items: [] }; let replaced = null; if (a.slot && EXLIB.slots.some(([k]) => k === a.slot)) { const planned = mealsFor(a.date)[a.slot]; const before = f.items.length; f.items = f.items.filter(i => i.slot !== a.slot && i.from !== planned.id); replaced = { slot: a.slot, planned: planned.n, removed_items: before - f.items.length }; } a.items.forEach(i => f.items.push({ n: String(i.n), k: Math.round(+i.k || 0), p: Math.round(+i.p || 0), c: Math.round(+i.c || 0), f: Math.round(+i.f || 0), src: 'coach', slot: a.slot || undefined })); store.food[a.date] = f; persist(); const t = foodTotals(a.date); return { ok: true, replaced, day_totals: { kcal: Math.round(t.kcal), p: Math.round(t.p), c: Math.round(t.c), f: Math.round(t.f) } }; }
     case 'log_body': { store.body[a.date] = { date: a.date, w: +a.w, fat: a.fat ? +a.fat : null, muscle: a.muscle ? +a.muscle : null, src: 'coach' }; persist(); return { ok: true }; }
     case 'set_meal': { if (!EXLIB.meals[a.meal_id] && !((store.plan.meals || {}).custom || {})[a.meal_id]) return bad('unknown meal id'); const m = mealsDoc(); m.week[a.weekday] = Object.assign({}, m.week[a.weekday] || {}, { [a.slot]: a.meal_id }); persist(); return { ok: true, weekday: DOWS[a.weekday], slot: a.slot, meal: (EXLIB.meals[a.meal_id] || {}).n || a.meal_id }; }
+    case 'set_goals': return { ok: true, goals: setGoals(a) };
     case 'set_targets': { store.settings.main = Object.assign({ kcal: 2300, p: 180, c: 240, f: 70, maint: 2850 }, store.settings.main || {}, Object.fromEntries(Object.entries(a).filter(([k, v]) => ['kcal', 'p', 'c', 'f'].includes(k) && v))); persist(); return { ok: true, targets: store.settings.main }; }
     case 'get_history': { const inR = d => d >= a.from && d <= a.to; return { logs: Object.values(store.logs).filter(l => inR(l.date)).map(l => ({ date: l.date, session: (EXLIB.tpl[l.tpl] || {}).n, done: !!l.done, notes: l.notes, ex: (l.ex || []).map(e => ({ name: exName(e.id), sets: e.sets.filter(s => s.done).map(s => `${s.r}@${s.w || 0}`) })) })), food: Object.keys(store.food).filter(inR).map(d => { const t = foodTotals(d); return { date: d, kcal: Math.round(t.kcal), p: Math.round(t.p), items: t.items }; }), body: Object.values(store.body).filter(r => inR(r.date)) }; }
     case 'get_day': { const p = planDay(a.date); return { date: a.date, session: EXLIB.tpl[p.tpl].n, tpl: p.tpl, exercises: p.ex.map(e => ({ id: e.id, name: exName(e.id), sets: e.sets, reps: e.reps })), log: store.logs[a.date] || null, meals: mealsFor(a.date), food: foodTotals(a.date) }; }
@@ -212,15 +215,21 @@ async function chat(req, res) {
   res.end();
 }
 
-const MCP = require('./mcp.js').makeMcp({ store, persist, EXLIB, planDay, mealsFor, foodTotals, exName, buildContext, addDays, weekNo, DOWS, pd, START_DATE, END_DATE, WEEK_MEALS });
+/* ---------- goals (outcome targets, separate from daily macro targets) ---------- */
+const GOAL_KEYS = { target_weight_lb: 'n', target_body_fat_pct: 'n', target_date: 'd', weekly_lift_sessions: 'n', weekly_cardio_sessions: 'n', daily_steps: 'n', protein_floor_g: 'n', weekly_loss_lb: 'n', notes: 's' };
+function getGoals() { return Object.assign({ target_weight_lb: 180, target_date: '2026-12-31', daily_steps: 10000, weekly_loss_lb: 1 }, store.settings.goals || {}); }
+function setGoals(a) { const g = Object.assign({}, store.settings.goals || {}); for (const [k, t] of Object.entries(GOAL_KEYS)) { if (!(k in (a || {}))) continue; const v = a[k]; if (v === null || v === '') { delete g[k]; continue; } if (t === 'n') { if (isFinite(+v)) g[k] = +v; } else if (t === 'd') { if (/^\d{4}-\d{2}-\d{2}$/.test(v)) g[k] = v; } else g[k] = String(v).slice(0, 500); } store.settings.goals = g; persist(); return getGoals(); }
+const OAUTH = require('./oauth.js').makeOAuth({ DATA_DIR, APP_KEY });
+const MCP = require('./mcp.js').makeMcp({ getGoals, setGoals, store, persist, EXLIB, planDay, mealsFor, foodTotals, exName, buildContext, addDays, weekNo, DOWS, pd, START_DATE, END_DATE, WEEK_MEALS });
 function authed(req) { if (!APP_KEY) return true; const h = req.headers.authorization || ''; return req.headers['x-key'] === APP_KEY || h === 'Bearer ' + APP_KEY; }
 
 http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
+  if (url.pathname.startsWith('/oauth/') || url.pathname.startsWith('/.well-known/')) { try { if (await OAUTH.handle(req, res, url)) return; } catch (e) { return send(res, 500, { error: 'server_error' }); } if (url.pathname.startsWith('/.well-known/')) return send(res, 404, { error: 'not found' }); }
   if (url.pathname === '/mcp' || url.pathname === '/mcp/') {
     res.setHeader('access-control-allow-origin', '*'); res.setHeader('access-control-allow-headers', 'authorization, content-type, x-key, mcp-protocol-version, mcp-session-id'); res.setHeader('access-control-allow-methods', 'POST, GET, OPTIONS');
     if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
-    if (!authed(req)) { res.writeHead(401, { 'content-type': 'application/json', 'www-authenticate': 'Bearer realm="recomp8"' }); return res.end('{"error":"unauthorized"}'); }
+    if (!authed(req) && !OAUTH.validToken(req)) { res.writeHead(401, { 'content-type': 'application/json', 'www-authenticate': OAUTH.challenge(req) }); return res.end('{"error":"unauthorized"}'); }
     if (req.method === 'GET') { res.writeHead(405, { 'content-type': 'application/json' }); return res.end('{"error":"streaming not offered; POST JSON-RPC"}'); }
     if (req.method !== 'POST') return send(res, 405, { error: 'method' });
     try { const body = await readBody(req, 1e6); const out = await MCP.handle(body); if (out.body === null) { res.writeHead(202); return res.end(); } return send(res, out.status, out.body); }
@@ -230,6 +239,7 @@ http.createServer(async (req, res) => {
     if (APP_KEY && req.headers['x-key'] !== APP_KEY) return send(res, 401, { error: 'unauthorized' });
     const parts = url.pathname.slice(5).split('/').filter(Boolean);
     try {
+      if (parts[0] === 'connections') { if (req.method === 'DELETE') { OAUTH.revokeAll(); return send(res, 200, { ok: true }); } return send(res, 200, { connections: OAUTH.connections() }); }
       if (parts[0] === 'ping') return send(res, 200, { ok: true, vision: !!ANTHROPIC_KEY, chat: !!ANTHROPIC_KEY });
       if (parts[0] === 'chat' && req.method === 'POST') return chat(req, res);
       if (parts[0] === 'food' && ['analyze', 'estimate', 'barcode', 'search'].includes(parts[1])) {

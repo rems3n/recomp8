@@ -345,6 +345,8 @@ function mealId(dow,slot){const i=SLOTS.findIndex(s=>s[0]===slot);return (S.meal
 function mealsFor(s){const dow=pd(s).getDay();const out={};SLOTS.forEach(([k])=>out[k]=mealId(dow,k));return out}
 function lsGet(k){try{return JSON.parse(localStorage.getItem('rc8:'+k)||'null')}catch(e){return null}}
 function lsSet(k,v){try{localStorage.setItem('rc8:'+k,JSON.stringify(v))}catch(e){}}
+const GOAL_DEF={target_weight_lb:180,target_date:'2026-12-31',daily_steps:10000,weekly_loss_lb:1};
+function goals(){return S.goals||GOAL_DEF}
 /* server mode: the page is hosted by its own Node server (Railway) and syncs through /api with a PIN */
 function apiKey(){try{return localStorage.getItem('rc8:key')||''}catch(e){return ''}}
 async function api(method,path,body){const r=await fetch('/api'+path,{method,headers:{'content-type':'application/json','x-key':apiKey()},body:body?JSON.stringify(body):undefined});if(r.status===401)throw {code:'unauthorized'};if(!r.ok)throw {code:'http_'+r.status};return r.status===204?null:r.json()}
@@ -370,7 +372,7 @@ async function syncPending(){
   return n}
 async function loadAll(){
   if(S.mode==='server'){try{const n=await syncPending();if(n)setTimeout(()=>toast('Synced '+n+' saved-on-phone '+(n>1?'entries':'entry')),800)}catch(e){}
-    const all=await api('GET','/all');S.logs=all.logs||{};S.body=all.body||{};S.food=all.food||{};if(all.plan?.days)S.plan=all.plan.days;if(all.plan?.meals)S.meals=all.plan.meals;if(all.settings?.main)S.settings={...S.settings,...all.settings.main};
+    const all=await api('GET','/all');S.logs=all.logs||{};S.body=all.body||{};S.food=all.food||{};if(all.plan?.days)S.plan=all.plan.days;if(all.plan?.meals)S.meals=all.plan.meals;if(all.settings?.main)S.settings={...S.settings,...all.settings.main};S.goals={...GOAL_DEF,...(all.settings?.goals||{})};
   }else if(S.db){
     for(const c of ['logs','body','food']){const q=await S.db.collection(c).get();const m={};q.docs.forEach(d=>{if(d.exists)m[d.id]=d.data()});S[c]=m;}
     const pdoc=await S.db.doc('plan/days').get();if(pdoc.exists)S.plan=pdoc.data();
@@ -822,7 +824,7 @@ function drawChart(rows){
   if(!window.Chart){note.textContent='Chart library did not load.';return}
   const accent=cssVar('--accent'),fg=cssVar('--fg'),muted=cssVar('--muted'),line=cssVar('--line'),blue=cssVar('--cardio');
   const labels=rows.map(r=>r.date);const avg=rows.map(r=>+avg7(r.date).toFixed(1));const fats=rows.map(r=>r.fat||null);const hasFat=fats.some(Boolean);
-  const ds=[{label:'Weight (lb)',data:rows.map(r=>r.w),borderColor:accent,backgroundColor:accent,pointRadius:3,tension:.25,yAxisID:'y'},{label:'7-day avg',data:avg,borderColor:fg,borderDash:[5,4],pointRadius:0,borderWidth:1.5,tension:.3,yAxisID:'y'},{label:'Goal 180',data:rows.map(()=>180),borderColor:muted,borderDash:[2,4],pointRadius:0,borderWidth:1,yAxisID:'y'}];
+  const ds=[{label:'Weight (lb)',data:rows.map(r=>r.w),borderColor:accent,backgroundColor:accent,pointRadius:3,tension:.25,yAxisID:'y'},{label:'7-day avg',data:avg,borderColor:fg,borderDash:[5,4],pointRadius:0,borderWidth:1.5,tension:.3,yAxisID:'y'},{label:'Goal '+(goals().target_weight_lb||180),data:rows.map(()=>goals().target_weight_lb||180),borderColor:muted,borderDash:[2,4],pointRadius:0,borderWidth:1,yAxisID:'y'}];
   if(hasFat)ds.push({label:'Body fat %',data:fats,borderColor:blue,backgroundColor:blue,pointRadius:2,spanGaps:true,tension:.25,yAxisID:'y2'});
   S.chart=new Chart($('#bchart'),{type:'line',data:{labels,datasets:ds},options:{responsive:true,maintainAspectRatio:false,animation:false,interaction:{mode:'index',intersect:false},plugins:{legend:{labels:{color:muted,boxWidth:10,font:{size:11}}}},scales:{x:{ticks:{color:muted,maxTicksLimit:6,callback:(v,i)=>labels[i].slice(5)},grid:{color:line}},y:{ticks:{color:muted},grid:{color:line},title:{display:true,text:'lb',color:muted}},y2:{display:hasFat,position:'right',ticks:{color:blue},grid:{drawOnChartArea:false},title:{display:true,text:'% fat',color:blue}}}}});
   note.textContent='Dashed line is the 7-day average the adjustment rule uses.';
@@ -864,6 +866,15 @@ function vSettings(m){
     <p class="small muted">Weekly rhythm (Mon→Sun): Full Body A · VO2max · Kettlebell · Full Body B · walk · Zone 2 long · walk. Keep the kettlebell day off the day before a lift, and keep Zone 2 truly easy — the VO2 and KB days are all the intensity you need.</p>
     <p class="small muted">Progression: when every set reaches the top of its rep range, the logger suggests +5 lb (upper) / +10 lb (lower) next time. Miss the bottom of the range two sessions running → drop 10% and rebuild.</p>
    </div>
+   ${S.mode==='server'?`<div class="card"><h2>Goals</h2><form id="gf" class="stack" style="margin-top:8px">
+    <div class="row nowrap"><label class="f">Target weight (lb)<input type="number" step="0.5" id="g_target_weight_lb" value="${goals().target_weight_lb??''}" inputmode="decimal"></label><label class="f">Target body fat %<input type="number" step="0.5" id="g_target_body_fat_pct" value="${goals().target_body_fat_pct??''}" inputmode="decimal"></label></div>
+    <div class="row nowrap"><label class="f">By date<input type="date" id="g_target_date" value="${goals().target_date??''}"></label><label class="f">Loss rate (lb/wk)<input type="number" step="0.25" id="g_weekly_loss_lb" value="${goals().weekly_loss_lb??''}" inputmode="decimal"></label></div>
+    <div class="row nowrap"><label class="f">Lifts / week<input type="number" id="g_weekly_lift_sessions" value="${goals().weekly_lift_sessions??''}" inputmode="numeric"></label><label class="f">Cardio / week<input type="number" id="g_weekly_cardio_sessions" value="${goals().weekly_cardio_sessions??''}" inputmode="numeric"></label></div>
+    <div class="row nowrap"><label class="f">Steps / day<input type="number" step="500" id="g_daily_steps" value="${goals().daily_steps??''}" inputmode="numeric"></label><label class="f">Protein floor (g)<input type="number" id="g_protein_floor_g" value="${goals().protein_floor_g??''}" inputmode="numeric"></label></div>
+    <label class="f">Notes<textarea id="g_notes" rows="2">${esc(goals().notes||'')}</textarea></label>
+    <button class="btn primary block">Save goals</button></form>
+    <p class="small muted" style="margin-top:8px">The coach and any connected agent (ChatGPT, Claude, Muse) can read and change these.</p></div>
+   <div class="card"><h2>Connected agents</h2><p class="small muted">MCP endpoint: <span class="num">${esc(location.origin)}/mcp</span>. Agents sign in with OAuth and your PIN.</p><div id="conns" class="small muted">Loading…</div><button class="btn ghost" id="revoke" style="margin-top:8px">Disconnect all agents</button></div>`:''}
    <div class="card"><h2>Data</h2><p class="small muted">Storage: <b>${S.mode}</b>. ${S.mode==='cloud'?'Logs sync across your devices through this page\'s database.':'Saving to this browser only; open from claude.ai signed in to sync.'}</p>
     <div class="row"><button class="btn" id="exp2" style="flex:1">Export everything (CSV)</button><button class="btn ghost" id="wipe">Reset plan edits</button></div></div>
   </div>`;
@@ -871,6 +882,9 @@ function vSettings(m){
   $('#preset').onclick=async()=>{await save('settings','main',{...g,kcal:2300,p:180,c:240,f:70,maint:2850,rest:60});render()};
   $('#hack').onchange=async e=>{await save('settings','main',{...S.settings,hack:e.target.checked})};
   $('#exp2').onclick=exportCSV;
+  const gf=$('#gf');if(gf){gf.onsubmit=async e=>{e.preventDefault();const g={};['target_weight_lb','target_body_fat_pct','weekly_loss_lb','weekly_lift_sessions','weekly_cardio_sessions','daily_steps','protein_floor_g'].forEach(k=>{const v=$('#g_'+k).value;if(v!=='')g[k]=+v});if($('#g_target_date').value)g.target_date=$('#g_target_date').value;if($('#g_notes').value.trim())g.notes=$('#g_notes').value.trim();try{await api('PUT','/settings/goals',g);S.goals={...GOAL_DEF,...g};toast('Goals saved');render()}catch(err){toast('Could not save goals')}};
+    api('GET','/connections').then(r=>{const c=$('#conns');if(c)c.textContent=r.connections.length?r.connections.map(x=>x.name).join(', '):'No agents connected yet.'}).catch(()=>{});
+    $('#revoke').onclick=async()=>{try{await api('DELETE','/connections');toast('All agents disconnected');render()}catch(e){toast('Failed')}}}
   $('#wipe').onclick=()=>{const ov=modal('<h2>Reset plan edits?</h2><p class="small muted">Day changes and meal swaps go back to the default plan. Logs and weigh-ins stay.</p><div class="row"><button class="btn primary" id="ok" style="flex:1">Reset</button><button class="btn ghost" id="x">Cancel</button></div>');$('#x',ov).onclick=()=>ov.remove();$('#ok',ov).onclick=async()=>{await save('plan','days',{days:{}});await save('plan','meals',{week:{}});ov.remove();render()}};
 }
 

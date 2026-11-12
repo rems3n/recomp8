@@ -12,3 +12,7 @@ Env: `APP_KEY` (PIN), `DATA_DIR` (mount a volume here, e.g. `/data`), `PORT`.
 
 `POST https://<host>/mcp` — Streamable HTTP (stateless JSON-RPC), protocol 2025-06-18.
 Auth: `Authorization: Bearer <APP_KEY>` (or `x-key`). 27 tools: context/briefing, day/week/history reads, body trend, progression suggestions, weekly review, exercise/template/meal libraries, grocery list, and writes for day edits, swaps/moves, set logging, food logging, weigh-ins, meal swaps, custom meals, targets, notes. See `mcp.js`.
+
+## OAuth for MCP clients
+
+`/mcp` accepts either `Authorization: Bearer <APP_KEY>` or an OAuth 2.1 access token. Discovery: `/.well-known/oauth-protected-resource`, `/.well-known/oauth-authorization-server`. Dynamic client registration at `/oauth/register`; authorization code + PKCE (S256); consent = app PIN. Tokens live in `DATA_DIR/oauth.json` (hashed). See `oauth.js`.
