@@ -114,10 +114,11 @@ td{padding:8px;border-bottom:1px solid var(--line);vertical-align:middle}
 .exname.h3{font-family:var(--display);font-weight:700;font-size:18px;line-height:1.05}
 .qm{display:inline-grid;place-items:center;width:16px;height:16px;border-radius:50%;background:var(--accent);color:var(--accent-ink);font:700 11px var(--body);vertical-align:middle;margin-left:2px}
 .thumbs{display:flex;gap:6px;margin-top:8px}
-.grip{touch-action:none;user-select:none;-webkit-user-select:none;cursor:grab;background:none;border:0;color:var(--muted);width:30px;min-height:40px;display:grid;place-items:center;flex:none;padding:0;margin-left:-6px}
+.grip{touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;cursor:grab;background:none;border:0;color:var(--muted);width:30px;min-height:40px;display:grid;place-items:center;flex:none;padding:0;margin-left:-6px}
 .grip svg{width:18px;height:18px;fill:currentColor}
 .dragging{position:relative;z-index:6;box-shadow:0 10px 28px rgba(0,0,0,.28);background:var(--surface);opacity:.96}
 .ex.dragging,.xrow.dragging{border-radius:10px}
+.sorting>*{transition:transform .16s ease}.sorting>.dragging{transition:none}.sorting>.ex>:not(.hd){display:none}
 .mealbtn{background:none;border:0;padding:0;margin:0;font:inherit;color:inherit;text-align:left;cursor:pointer;width:100%;min-width:0}
 .mealbtn .chev{color:var(--muted);font-size:13px}
 .itembtn{background:none;border:0;padding:0;font:inherit;color:inherit;text-align:left;cursor:pointer;text-decoration:underline;text-decoration-color:var(--line);text-underline-offset:3px}
@@ -428,18 +429,47 @@ function howTo(id){const i=exInfo(id)||{imgs:[],steps:[],muscles:[],name:''},e=E
    ${e.cue?`<p><b>Coach cue:</b> ${esc(e.cue)}</p>`:''}${i.steps.length?`<ol>${i.steps.map(s=>`<li>${esc(s)}</li>`).join('')}</ol><p class="small muted">Primary: ${esc(i.muscles.join(', '))}. Photos and steps from free-exercise-db (public domain); shown for the closest match, "${esc(i.name)}".</p>`:`<p><b>Pattern:</b> ${esc(PAT[e.p])} · <b>Equipment:</b> ${esc(e.eq)}</p>`}</div>`);
   $('#x',ov).onclick=()=>ov.remove()}
 
-/* drag-to-reorder: pointer events so it works with touch on iOS (HTML5 DnD does not) */
+/* drag-to-reorder: pointer events so it works with touch on iOS (HTML5 DnD does not).
+   The grabbed card follows the finger; the others slide out of the way; nothing moves in the DOM until drop. */
 function sortable(list,itemSel,onMove){
-  list.querySelectorAll('[data-grip]').forEach(h=>h.addEventListener('pointerdown',e=>{
-    const item=h.closest(itemSel);if(!item||item.parentElement!==list)return;e.preventDefault();
-    const items=()=>[...list.children].filter(x=>x.matches(itemSel));const from=items().indexOf(item);
-    const sc=list.closest('.md');const pid=e.pointerId;item.classList.add('dragging');document.body.style.userSelect='none';if(navigator.vibrate)navigator.vibrate(10);
-    let y=e.clientY,timer=setInterval(()=>{const vh=window.innerHeight;const dy=y<90?-10:y>vh-140?10:0;if(dy)(sc||window).scrollBy(0,dy)},30);
-    const move=ev=>{if(ev.pointerId!==pid)return;ev.preventDefault();y=ev.clientY;const sibs=items().filter(x=>x!==item);let before=null;for(const s2 of sibs){const r=s2.getBoundingClientRect();if(y<r.top+r.height/2){before=s2;break}}
-      if(before){if(item.nextElementSibling!==before)list.insertBefore(item,before)}else if(sibs.length){const last=sibs[sibs.length-1];if(last.nextElementSibling!==item)last.after(item)}};
-    const up=ev=>{if(ev.pointerId!==pid)return;clearInterval(timer);window.removeEventListener('pointermove',move);window.removeEventListener('pointerup',up);window.removeEventListener('pointercancel',up);document.body.style.userSelect='';item.classList.remove('dragging');const to=items().indexOf(item);if(to!==from)onMove(from,to)};
-    window.addEventListener('pointermove',move,{passive:false});window.addEventListener('pointerup',up);window.addEventListener('pointercancel',up);
-  }));
+  list.querySelectorAll('[data-grip]').forEach(h=>{
+    h.addEventListener('touchstart',e=>{if(e.cancelable)e.preventDefault()},{passive:false});
+    h.addEventListener('touchmove',e=>{if(e.cancelable)e.preventDefault()},{passive:false});
+    h.addEventListener('contextmenu',e=>e.preventDefault());
+    h.addEventListener('pointerdown',e=>{
+      const item=h.closest(itemSel);if(!item||item.parentElement!==list||list._sorting||e.button>0)return;e.preventDefault();list._sorting=true;
+      const all=[...list.children].filter(x=>x.matches(itemSel));const from=all.indexOf(item);const others=all.filter(x=>x!==item);
+      const sc=list.closest('.md');const scrollBy=dy=>{if(dy)(sc||window).scrollBy(0,dy)};const pid=e.pointerId;
+      try{h.setPointerCapture(pid)}catch(_){}
+      let y=e.clientY,y0=e.clientY,active=false,to=from,grab=0,scrollIv=null;const shift=new Map(),rel=new Map();
+      /* resting position of each card, measured once (never read back through a transform that is mid-animation) */
+      const top=el=>list.getBoundingClientRect().top+rel.get(el);
+      const setShift=(el,v)=>{if((shift.get(el)||0)===v)return;shift.set(el,v);el.style.transform=v?`translateY(${v}px)`:''};
+      const update=()=>{
+        const h0=item.offsetHeight,n0=top(item);const gap=all.length>1?Math.max(0,top(all[1])-top(all[0])-all[0].offsetHeight):0;
+        const lo=top(all[0])-n0,hi=top(all[all.length-1])+all[all.length-1].offsetHeight-h0-n0;
+        const dy=Math.max(lo,Math.min(hi,y-grab-n0));const a=n0+dy,b=a+h0;to=from;
+        all.forEach((el,j)=>{if(el===item)return;const mid=top(el)+el.offsetHeight/2;
+          if(j<from&&a<mid){setShift(el,h0+gap);to--}else if(j>from&&b>mid){setShift(el,-(h0+gap));to++}else setShift(el,0)});
+        shift.set(item,dy);item.style.transform=`translateY(${dy}px)`};
+      const activate=()=>{if(active)return;active=true;clearTimeout(hold);
+        const before=item.getBoundingClientRect().top;grab=y-before;list.classList.add('sorting');item.classList.add('dragging');document.body.style.userSelect='none';
+        scrollBy(item.getBoundingClientRect().top-before);grab=Math.min(grab,item.offsetHeight-8);const lt=list.getBoundingClientRect().top;all.forEach(el=>rel.set(el,el.getBoundingClientRect().top-lt));
+        if(navigator.vibrate)navigator.vibrate(10);update();
+        scrollIv=setInterval(()=>{const vh=window.innerHeight;const dy=y<90?-10:y>vh-140?10:0;if(dy){scrollBy(dy);update()}},30)};
+      const hold=setTimeout(activate,180);
+      const move=ev=>{if(ev.pointerId!==pid)return;ev.preventDefault();y=ev.clientY;if(!active){if(Math.abs(y-y0)<5)return;activate()}update()};
+      const up=async ev=>{if(ev.pointerId!==pid)return;clearTimeout(hold);clearInterval(scrollIv);
+        window.removeEventListener('pointermove',move);window.removeEventListener('pointerup',up);window.removeEventListener('pointercancel',up);
+        try{h.releasePointerCapture(pid)}catch(_){}
+        if(!active){list._sorting=false;return}
+        all.forEach(el=>{el.style.transition='none';el.style.transform=''});
+        if(to!==from){if(others[to])list.insertBefore(item,others[to]);else others[others.length-1].after(item)}
+        const kept=item.getBoundingClientRect().top;document.body.style.userSelect='';item.classList.remove('dragging');list.classList.remove('sorting');all.forEach(el=>{el.style.transition=''});
+        try{if(to!==from)await onMove(from,to)}finally{list._sorting=false}
+        const now=[...list.children].filter(x=>x.matches(itemSel))[to];if(now)scrollBy(now.getBoundingClientRect().top-kept)};
+      window.addEventListener('pointermove',move,{passive:false});window.addEventListener('pointerup',up);window.addEventListener('pointercancel',up);
+    })});
 }
 const GRIP='<button class="grip" data-grip type="button" aria-label="Drag to reorder"><svg viewBox="0 0 24 24"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg></button>';
 function moveIn(arr,from,to){const [x]=arr.splice(from,1);arr.splice(to,0,x);return arr}
@@ -599,9 +629,17 @@ function vTrain(m){
   $('#notes').onchange=persist;
   $('#finish').onclick=async()=>{log.done=true;log.notes=$('#notes').value;await save('logs',d,log);toast(tp.k==='lift'?'Session logged':'Marked done');render()};
   const un=$('#undone');if(un)un.onclick=async()=>{log.done=false;await save('logs',d,log);render()};
-  const rs=restSec();const opts=[rs,rs+30,rs+60];['t1','t2','t3'].forEach((id,i)=>{const b=$('#'+id);b.textContent=fmtSec(opts[i]);b.onclick=()=>startTimer(opts[i])});$('#tstop').onclick=()=>{clearInterval(timerIv);$('#restbar').hidden=true};
+  const rs=restSec();const opts=[rs,rs+30,rs+60];['t1','t2','t3'].forEach((id,i)=>{const b=$('#'+id);b.textContent=fmtSec(opts[i]);b.onclick=()=>startTimer(opts[i])});$('#tstop').onclick=stopTimer;resumeTimer();
 }
-function startTimer(sec){clearInterval(timerIv);const bar=$('#restbar'),t=$('#timer');if(!t)return;bar.hidden=false;let left=sec;const tick=()=>{if(!document.body.contains(t)){clearInterval(timerIv);return}t.textContent=Math.floor(left/60)+':'+String(left%60).padStart(2,'0');if(left<=0){clearInterval(timerIv);t.textContent='GO';if(navigator.vibrate)navigator.vibrate(200)}left--};tick();timerIv=setInterval(tick,1000)}
+function stopTimer(){clearInterval(timerIv);timerIv=null;lsSet('rest',null);const b=$('#restbar');if(b)b.hidden=true}
+/* Counts down to a wall-clock deadline (not by counting ticks), so it stays right while the app is in the background or the phone is locked. */
+function startTimer(sec,end){clearInterval(timerIv);const bar=$('#restbar'),t=$('#timer');if(!t)return;if(!end){end=Date.now()+sec*1000;lsSet('rest',{end})}bar.hidden=false;
+  const tick=()=>{if(!document.body.contains(t)){clearInterval(timerIv);return}const left=Math.ceil((end-Date.now())/1000);
+    if(left>0){t.textContent=Math.floor(left/60)+':'+String(left%60).padStart(2,'0');return}
+    clearInterval(timerIv);timerIv=null;t.textContent='GO';lsSet('rest',null);if(navigator.vibrate)navigator.vibrate(200)};
+  tick();if(end>Date.now())timerIv=setInterval(tick,250)}
+function resumeTimer(){const r=lsGet('rest');if(!r||!r.end)return;if(Date.now()-r.end>30*60*1000){lsSet('rest',null);return}startTimer(0,r.end)}
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)resumeTimer()});window.addEventListener('pageshow',resumeTimer);window.addEventListener('focus',resumeTimer);
 
 /* ================= EAT ================= */
 function vEat(m){
